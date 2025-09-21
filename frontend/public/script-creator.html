@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI剧本创作平台 - 剧本编辑器</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Tailwind配置
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#1DD9FF',
+                        secondary: '#E4530A',
+                        accent: '#BEFF33',
+                        danger: '#ef4444',
+                        dark: '#1e293b'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                },
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .animate-fade-in {
+                animation: fadeIn 0.3s ease-in;
+            }
+            .animate-slide-up {
+                animation: slideUp 0.4s ease-out;
+            }
+            .animate-slide-in {
+                animation: slideIn 0.3s ease-out;
+            }
+            .animate-scale {
+                animation: scale 0.2s ease-out;
+            }
+            .animate-pulse-soft {
+                animation: pulseSoft 2s infinite;
+            }
+            .editor-focus {
+                @apply focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300;
+            }
+            .btn-primary {
+                @apply bg-primary text-white px-6 py-3 rounded-lg font-medium hover:bg-primary-dark transform hover:-translate-y-1 transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2;
+            }
+            .btn-secondary {
+                @apply bg-white border border-gray-300 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-50 transform hover:-translate-y-1 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-gray-200;
+            }
+            .btn-outline {
+                @apply bg-transparent border border-primary text-primary px-6 py-3 rounded-lg font-medium hover:bg-primary/5 transform hover:-translate-y-1 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2;
+            }
+            .tab-item {
+                @apply relative overflow-hidden transition-all duration-300 ease-in-out;
+            }
+            .tab-item::after {
+                content: '';
+                @apply absolute bottom-0 left-0 w-0 h-0.5 bg-primary transition-all duration-300 ease-in-out;
+            }
+            .tab-item:hover::after,
+            .tab-item.active::after {
+                @apply w-full;
+            }
+            .card-hover {
+                @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+            }
+            .nav-item-active {
+                @apply relative overflow-hidden;
+            }
+            .nav-item-active::before {
+                content: '';
+                @apply absolute top-0 left-0 w-full h-full bg-gradient-to-r from-primary/10 to-transparent transform -translate-x-full transition-transform duration-500;
+            }
+            .nav-item-active:hover::before {
+                @apply transform translate-x-full;
+            }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(-20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes scale {
+            from { transform: scale(0.95); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes pulseSoft {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a1a1a1;
+        }
+
+        /* 编辑器样式 */
+        .editor-content {
+            min-height: 200px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- 导航栏 -->
+    <header class="sticky top-0 z-50 bg-white shadow-sm">
+        <div class="container mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <i class="fa fa-film text-primary text-2xl"></i>
+                <h1 class="text-xl font-bold text-dark">AI剧本创作平台</h1>
+            </div>
+            
+            <div class="flex items-center space-x-4">
+                <a href="/index.html" class="btn-outline flex items-center space-x-2 group">
+                    <i class="fa fa-home transition-transform duration-300 group-hover:scale-110"></i>
+                    <span>平台首页</span>
+                </a>
+                <button id="save-script-btn" class="btn-outline flex items-center space-x-2 group">
+                    <i class="fa fa-save transition-transform duration-300 group-hover:scale-110"></i>
+                    <span>保存</span>
+                </button>
+                <button id="export-script-btn" class="btn-outline flex items-center space-x-2 group">
+                    <i class="fa fa-download transition-transform duration-300 group-hover:scale-110"></i>
+                    <span>导出</span>
+                </button>
+                <div class="relative">
+                     <button id="user-menu-btn" class="flex items-center space-x-2 focus:outline-none group">
+                         <div class="w-8 h-8 rounded-full bg-primary-10 flex items-center justify-center text-primary font-medium group-hover:bg-primary-20 transition-colors duration-300">
+                             <span id="user-initial">用户</span>
+                         </div>
+                         <span id="user-name" class="hidden md:inline font-medium">用户名</span>
+                         <i class="fa fa-angle-down text-gray-500 transition-transform duration-300 group-hover:rotate-180"></i>
+                     </button>
+                     <!-- 用户菜单下拉 -->
+                     <div id="user-menu" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg z-50 transform transition-all duration-300 origin-top-right scale-95 opacity-0">
+                         <div class="py-2">
+                             <a href="/profile.html" class="block px-4 py-2 text-gray-700 hover:bg-primary-5 transition-colors duration-300">
+                                 <i class="fa fa-user-circle mr-2 transition-transform duration-300"></i>个人中心
+                             </a>
+                             <a href="/saved-scripts.html" class="block px-4 py-2 text-gray-700 hover:bg-primary-5 transition-colors duration-300">
+                                 <i class="fa fa-folder mr-2 transition-transform duration-300"></i>我的剧本
+                             </a>
+                             <div class="border-t border-gray-200 my-1"></div>
+                             <button id="logout-btn" class="w-full text-left px-4 py-2 text-gray-700 hover:bg-primary-5 transition-colors duration-300">
+                                 <i class="fa fa-sign-out mr-2 transition-transform duration-300"></i>退出登录
+                             </button>
+                         </div>
+                     </div>
+                 </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="container mx-auto px-4 py-8">
+        <!-- 剧本标题和元信息 -->
+        <div class="bg-white rounded-xl shadow-sm p-6 mb-8 animate-fade-in">
+            <div class="flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0">
+                <div class="flex-1">
+                                <input type="text" id="script-title" class="w-full text-2xl font-bold border-none focus:ring-0 text-gray-800 placeholder-gray-400 transition-all duration-300 focus:shadow-sm" placeholder="输入剧本标题..." value="未命名剧本">
+                                <div class="flex items-center mt-2 text-sm text-gray-500">
+                                    <span id="script-type-display" class="px-2 py-1 bg-primary/10 text-primary rounded-md mr-3">竖屏短剧</span>
+                                    <span id="script-episode-info" class="mr-3">集数: <span id="episode-count-display">10</span>集</span>
+                                    <span id="last-updated">最后更新: 刚刚</span>
+                                </div>
+                            </div>
+                <div class="flex space-x-3">
+                    <button id="back-btn" class="btn-secondary flex items-center space-x-2">
+                        <i class="fa fa-arrow-left"></i>
+                        <span>返回</span>
+                    </button>
+                    <button id="preview-btn" class="btn-outline flex items-center space-x-2">
+                        <i class="fa fa-eye"></i>
+                        <span>预览</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 创作区域 -->
+        <div class="flex flex-col md:flex-row gap-6">
+            <!-- 左侧：创作步骤导航 -->
+            <div class="w-full md:w-64 shrink-0">
+                <div class="bg-white rounded-xl shadow-sm p-4 sticky top-24">
+                    <h2 class="font-bold text-gray-700 mb-4">创作步骤</h2>
+                    <ul id="steps-nav" class="space-y-1">
+                        <li>
+                            <button id="step-nav-0" class="w-full text-left px-4 py-3 rounded-lg font-medium bg-primary-10 text-primary flex items-center space-x-2 nav-item-active">
+                                <span class="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-sm">1</span>
+                                <span>选择剧本类型</span>
+                            </button>
+                        </li>
+                        <li>
+                            <button id="step-nav-1" class="w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 flex items-center space-x-2 hover:bg-primary-5 transition-colors">
+                                <span class="w-6 h-6 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-sm">2</span>
+                                <span>生成故事创意</span>
+                            </button>
+                        </li>
+                        <li>
+                            <button id="step-nav-2" class="w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 flex items-center space-x-2 hover:bg-primary-5 transition-colors">
+                                <span class="w-6 h-6 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-sm">3</span>
+                                <span>完善故事梗概</span>
+                            </button>
+                        </li>
+                        <li>
+                            <button id="step-nav-3" class="w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 flex items-center space-x-2 hover:bg-primary-5 transition-colors">
+                                <span class="w-6 h-6 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-sm">4</span>
+                                <span>生成分集大纲</span>
+                            </button>
+                        </li>
+                        <li>
+                            <button id="step-nav-4" class="w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 flex items-center space-x-2 hover:bg-primary-5 transition-colors">
+                                <span class="w-6 h-6 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-sm">5</span>
+                                <span>生成剧本内容</span>
+                            </button>
+                        </li>
+                        <li>
+                            <button id="step-nav-5" class="w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 flex items-center space-x-2 hover:bg-primary-5 transition-colors">
+                                <span class="w-6 h-6 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-sm">6</span>
+                                <span>完成创作</span>
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- 右侧：创作内容区 -->
+            <div class="flex-1">
+                <div class="bg-white rounded-xl shadow-sm p-6 animate-fade-in" id="script-creator-content">
+                    <!-- 剧本类型选择步骤 -->
+                    <div id="step-0" class="animate-slide-up">
+                        <h2 class="text-2xl font-bold mb-6">选择剧本类型</h2>
+                        <p class="text-gray-600 mb-8">请选择您想要创作的剧本类型，并设置相关参数</p>
+                        
+                        <div class="space-y-8">
+                            <!-- 剧本类型选择 -->
+                            <div>
+                                <label class="block text-gray-700 font-medium mb-3">剧本类型</label>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-primary-50 transition-colors script-type-option card-hover" data-type="竖屏短剧">
+                                        <div class="flex items-center mb-2">
+                                            <div class="w-8 h-8 rounded-full bg-primary-10 flex items-center justify-center mr-3">
+                                                <i class="fa fa-mobile text-primary"></i>
+                                            </div>
+                                            <h3 class="text-lg font-bold">竖屏短剧</h3>
+                                        </div>
+                                        <p class="text-gray-600">适用于手机端观看，每集时长1-3分钟，适合短视频平台</p>
+                                    </div>
+                                    
+                                    <div class="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-primary-50 transition-colors script-type-option card-hover" data-type="横屏短剧">
+                                        <div class="flex items-center mb-2">
+                                            <div class="w-8 h-8 rounded-full bg-primary-10 flex items-center justify-center mr-3">
+                                                <i class="fa fa-tablet text-primary"></i>
+                                            </div>
+                                            <h3 class="text-lg font-bold">横屏短剧</h3>
+                                        </div>
+                                        <p class="text-gray-600">适用于平板或电脑观看，每集时长5-10分钟</p>
+                                    </div>
+                                    
+                                    <div class="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-colors script-type-option opacity-50" data-type="电视剧">
+                                        <div class="flex items-center mb-2">
+                                            <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
+                                                <i class="fa fa-television text-gray-500"></i>
+                                            </div>
+                                            <h3 class="text-lg font-bold">电视剧</h3>
+                                        </div>
+                                        <p class="text-gray-600">适用于电视播放，每集时长30-60分钟（开发中）</p>
+                                    </div>
+                                    
+                                    <div class="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-colors script-type-option opacity-50" data-type="电影">
+                                        <div class="flex items-center mb-2">
+                                            <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
+                                                <i class="fa fa-film text-gray-500"></i>
+                                            </div>
+                                            <h3 class="text-lg font-bold">电影</h3>
+                                        </div>
+                                        <p class="text-gray-600">适用于影院放映，时长90-120分钟（开发中）</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 剧集设置 -->
+                            <div id="script-settings" class="hidden">
+                                <label class="block text-gray-700 font-medium mb-3">剧集设置</label>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label class="block text-gray-500 mb-2">集数</label>
+                                        <input type="number" id="episode-count" min="1" max="100" value="10" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-300">
+                                        <p class="text-sm text-gray-500 mt-1">建议短剧集数：10-30集</p>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-gray-500 mb-2">每集字数（约）</label>
+                                        <input type="number" id="word-count" min="500" max="50000" value="5000" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-300">
+                                        <p class="text-sm text-gray-500 mt-1">建议短剧字数：3000-8000字/集</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 创作类型选择 -->
+                            <div id="creation-type-section" class="hidden">
+                                <label class="block text-gray-700 font-medium mb-3">创作方式</label>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <button id="start-original-btn" class="border border-primary bg-primary-5 text-primary rounded-lg p-4 hover:bg-primary-10 transition-colors card-hover">
+                                        <div class="flex items-center mb-2">
+                                            <div class="w-8 h-8 rounded-full bg-primary-20 flex items-center justify-center mr-3">
+                                                <i class="fa fa-lightbulb-o text-primary"></i>
+                                            </div>
+                                            <h3 class="text-lg font-bold">原创剧本</h3>
+                                        </div>
+                                        <p class="text-gray-600">从灵感出发，创作全新的剧本内容</p>
+                                    </button>
+                                    
+                                    <button id="start-adapt-btn" class="border border-gray-200 rounded-lg p-4 hover:border-primary-50 transition-colors card-hover">
+                                        <div class="flex items-center mb-2">
+                                            <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center mr-3">
+                                                <i class="fa fa-book text-gray-500"></i>
+                                            </div>
+                                            <h3 class="text-lg font-bold">改编剧本</h3>
+                                        </div>
+                                        <p class="text-gray-600">上传原著文本，改编成剧本格式</p>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 其他步骤将通过JavaScript动态加载 -->
+                </div>
+
+                <!-- 底部操作按钮 -->
+                <div class="mt-6 flex justify-between">
+                    <button id="prev-step-btn" class="btn-secondary hidden group">
+                        <i class="fa fa-arrow-left mr-2 transition-transform duration-300 group-hover:translate-x-[-2px]"></i>上一步
+                    </button>
+                    <div class="ml-auto">
+                        <button id="next-step-btn" class="btn-primary group">
+                            下一步<i class="fa fa-arrow-right ml-2 transition-transform duration-300 group-hover:translate-x-[2px]"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-white border-t border-gray-200 mt-12 py-6">
+        <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
+            <p>&copy; 2023 AI剧本创作平台 版权所有</p>
+        </div>
+    </footer>
+
+    <!-- 加载指示器 -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 max-w-md w-full shadow-xl">
+            <div class="flex flex-col items-center">
+                <div class="w-12 h-12 border-4 border-primary-30 border-t-primary rounded-full animate-spin mb-4"></div>
+                <p id="loading-message" class="text-gray-700 font-medium">加载中...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 独立的剧本创作页面脚本 -->
+    <script src="script-creator.js"></script>
+</body>
+</html>

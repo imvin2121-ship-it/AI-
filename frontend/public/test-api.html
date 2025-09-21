@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API测试页面</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4F46E5',
+                        secondary: '#6366F1',
+                        accent: '#8B5CF6',
+                        dark: '#1E293B',
+                        light: '#F8FAFC'
+                    },
+                    fontFamily: {
+                        inter: ['Inter', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .animate-fade-in {
+                animation: fadeIn 0.3s ease-in-out;
+            }
+            .animate-slide-up {
+                animation: slideUp 0.3s ease-out;
+            }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-inter text-dark min-h-screen">
+    <!-- 导航栏 -->
+    <nav class="bg-white shadow-sm py-4 sticky top-0 z-40">
+        <div class="container mx-auto px-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <i class="fa fa-pencil-square-o text-primary text-2xl"></i>
+                    <h1 class="text-xl font-bold text-dark">AI剧本创作平台</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="/" class="text-gray-600 hover:text-primary transition-colors">
+                        <i class="fa fa-home mr-1"></i>首页
+                    </a>
+                    <a href="/script-creator.html" class="text-gray-600 hover:text-primary transition-colors">
+                        <i class="fa fa-pencil mr-1"></i>剧本创作
+                    </a>
+                    <a href="/test-api.html" class="text-primary font-medium">
+                        <i class="fa fa-code mr-1"></i>API测试
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="container mx-auto px-4 py-8 max-w-4xl">
+        <h2 class="text-2xl font-bold mb-6">API测试工具</h2>
+        <p class="text-gray-600 mb-8">使用以下表单测试API端点是否正常工作</p>
+
+        <!-- 测试结果显示区域 -->
+        <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-2">测试结果</h3>
+            <div id="test-results" class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 h-64 overflow-y-auto font-mono text-sm whitespace-pre-wrap">
+                <!-- 测试结果将在这里显示 -->
+            </div>
+        </div>
+
+        <!-- 通用参数设置 -->
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold mb-4">通用参数</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label for="script-type" class="block text-gray-700 font-medium mb-2">剧本类型</label>
+                    <select id="script-type" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+                        <option value="电影剧本">电影剧本</option>
+                        <option value="电视剧剧本">电视剧剧本</option>
+                        <option value="网络剧剧本">网络剧剧本</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="episode-count" class="block text-gray-700 font-medium mb-2">集数</label>
+                    <input type="number" id="episode-count" value="10" min="1" max="50" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+                </div>
+                <div>
+                    <label for="word-count" class="block text-gray-700 font-medium mb-2">每集字数</label>
+                    <input type="number" id="word-count" value="5000" min="1000" max="20000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+                </div>
+            </div>
+        </div>
+
+        <!-- 生成故事创意测试 -->
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold mb-4">1. 生成故事创意</h3>
+            <div class="mb-4">
+                <label for="keywords" class="block text-gray-700 font-medium mb-2">关键词</label>
+                <input type="text" id="keywords" value="爱情,都市,职场,逆袭" placeholder="例如：爱情,都市,职场,逆袭" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+            </div>
+            <button id="test-generate-loglines" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors">
+                <i class="fa fa-play-circle mr-2"></i>测试API
+            </button>
+        </div>
+
+        <!-- 生成故事梗概测试 -->
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold mb-4">2. 生成故事梗概</h3>
+            <div class="mb-4">
+                <label for="logline" class="block text-gray-700 font-medium mb-2">故事创意</label>
+                <textarea id="logline" rows="3" placeholder="请输入故事创意" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">都市职场爱情故事：一位平凡的职场新人在公司遇到了自己的理想型，但对方却是公司的高管，两人在工作中产生了微妙的感情。</textarea>
+            </div>
+            <button id="test-generate-outline" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors">
+                <i class="fa fa-play-circle mr-2"></i>测试API
+            </button>
+        </div>
+
+        <!-- 生成分集大纲测试 -->
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold mb-4">3. 生成分集大纲</h3>
+            <div class="mb-4">
+                <label for="outline" class="block text-gray-700 font-medium mb-2">故事梗概</label>
+                <textarea id="outline" rows="4" placeholder="请输入故事梗概" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">故事讲述了都市白领小李的职场成长和爱情经历。小李是一家大型企业的新员工，工作努力但缺乏自信。在一次项目中，她遇到了公司的高管张总，张总欣赏小李的工作态度，对她进行了指导和帮助。两人在工作中逐渐产生了感情，但由于身份差距和公司规定，他们的关系面临着诸多挑战...</textarea>
+            </div>
+            <button id="test-generate-episodes" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors">
+                <i class="fa fa-play-circle mr-2"></i>测试API
+            </button>
+        </div>
+
+        <!-- 生成剧本内容测试 -->
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold mb-4">4. 生成剧本内容</h3>
+            <div class="mb-4">
+                <label for="script-outline" class="block text-gray-700 font-medium mb-2">故事梗概</label>
+                <textarea id="script-outline" rows="2" placeholder="请输入故事梗概" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">都市职场爱情故事，讲述了新员工小李和高管张总之间的感情故事。</textarea>
+            </div>
+            <div class="mb-4">
+                <label for="episodes" class="block text-gray-700 font-medium mb-2">分集大纲（JSON格式）</label>
+                <textarea id="episodes" rows="4" placeholder="请输入分集大纲JSON" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">[{"id":"1","summary":"小李第一天到公司报到，遇到了张总","cliffhanger":"小李在电梯里不小心撞到了张总"},{"id":"2","summary":"小李开始参与第一个项目，遇到了各种困难","cliffhanger":"张总主动提出要帮助小李"}]</textarea>
+            </div>
+            <button id="test-generate-script" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors">
+                <i class="fa fa-play-circle mr-2"></i>测试API
+            </button>
+        </div>
+
+        <!-- 局部重写测试 -->
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold mb-4">5. 局部重写</h3>
+            <div class="mb-4">
+                <label for="content-to-rewrite" class="block text-gray-700 font-medium mb-2">需要重写的内容</label>
+                <textarea id="content-to-rewrite" rows="3" placeholder="请输入需要重写的内容" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">小李走进办公室，看到张总正在工作。她走过去，向张总打招呼。</textarea>
+            </div>
+            <div class="mb-4">
+                <label for="rewrite-instruction" class="block text-gray-700 font-medium mb-2">重写指令</label>
+                <input type="text" id="rewrite-instruction" value="让这段对话更生动，增加人物的情感表达" placeholder="例如：让这段对话更生动" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+            </div>
+            <button id="test-rewrite-section" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors">
+                <i class="fa fa-play-circle mr-2"></i>测试API
+            </button>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-dark text-white py-8 mt-12">
+        <div class="container mx-auto px-4">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="mb-4 md:mb-0">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa fa-pencil-square-o text-primary text-xl"></i>
+                        <span class="text-lg font-bold">AI剧本创作平台</span>
+                    </div>
+                    <p class="text-gray-400 mt-2">用AI助力您的剧本创作</p>
+                </div>
+                <div class="text-gray-400 text-sm">
+                    © 2023 AI剧本创作平台. 保留所有权利.
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 加载指示器 -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-lg flex flex-col items-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+            <p id="loading-message" class="text-gray-700">测试中...</p>
+        </div>
+    </div>
+
+    <script>
+        // DOM元素缓存
+        const domElements = {
+            testResults: document.getElementById('test-results'),
+            scriptType: document.getElementById('script-type'),
+            episodeCount: document.getElementById('episode-count'),
+            wordCount: document.getElementById('word-count'),
+            keywords: document.getElementById('keywords'),
+            logline: document.getElementById('logline'),
+            outline: document.getElementById('outline'),
+            scriptOutline: document.getElementById('script-outline'),
+            episodes: document.getElementById('episodes'),
+            contentToRewrite: document.getElementById('content-to-rewrite'),
+            rewriteInstruction: document.getElementById('rewrite-instruction'),
+            loadingOverlay: document.getElementById('loading-overlay'),
+            loadingMessage: document.getElementById('loading-message'),
+            testGenerateLoglinesBtn: document.getElementById('test-generate-loglines'),
+            testGenerateOutlineBtn: document.getElementById('test-generate-outline'),
+            testGenerateEpisodesBtn: document.getElementById('test-generate-episodes'),
+            testGenerateScriptBtn: document.getElementById('test-generate-script'),
+            testRewriteSectionBtn: document.getElementById('test-rewrite-section')
+        };
+
+        // 初始化事件监听
+        function init() {
+            // 绑定测试按钮事件
+            domElements.testGenerateLoglinesBtn.addEventListener('click', testGenerateLoglines);
+            domElements.testGenerateOutlineBtn.addEventListener('click', testGenerateOutline);
+            domElements.testGenerateEpisodesBtn.addEventListener('click', testGenerateEpisodes);
+            domElements.testGenerateScriptBtn.addEventListener('click', testGenerateScript);
+            domElements.testRewriteSectionBtn.addEventListener('click', testRewriteSection);
+        }
+
+        // 显示加载指示器
+        function showLoading(message = '测试中...') {
+            domElements.loadingMessage.textContent = message;
+            domElements.loadingOverlay.classList.remove('hidden');
+        }
+
+        // 隐藏加载指示器
+        function hideLoading() {
+            domElements.loadingOverlay.classList.add('hidden');
+        }
+
+        // 显示测试结果
+        function showTestResult(result, success = true) {
+            const timestamp = new Date().toLocaleTimeString();
+            const resultHtml = `<span class="text-${success ? 'green' : 'red'}-600">[${timestamp}] ${success ? '✓ 测试成功' : '✗ 测试失败'}:</span>\n${JSON.stringify(result, null, 2)}\n\n`;
+            domElements.testResults.innerHTML = resultHtml + domElements.testResults.innerHTML;
+        }
+
+        // 测试生成故事创意API
+        async function testGenerateLoglines() {
+            const keywords = domElements.keywords.value.trim();
+            const scriptType = domElements.scriptType.value;
+            const episodeCount = parseInt(domElements.episodeCount.value) || 10;
+
+            if (!keywords) {
+                alert('请输入关键词');
+                return;
+            }
+
+            showLoading('正在测试生成故事创意API...');
+
+            try {
+                const response = await fetch('http://localhost:4000/api/scripts/generate-loglines', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        keywords,
+                        scriptType,
+                        episodeCount
+                    })
+                });
+
+                const data = await response.json();
+                showTestResult(data, response.ok);
+            } catch (error) {
+                console.error('API测试错误:', error);
+                showTestResult({ error: error.message }, false);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // 测试生成故事梗概API
+        async function testGenerateOutline() {
+            const logline = domElements.logline.value.trim();
+            const scriptType = domElements.scriptType.value;
+
+            if (!logline) {
+                alert('请输入故事创意');
+                return;
+            }
+
+            showLoading('正在测试生成故事梗概API...');
+
+            try {
+                const response = await fetch('http://localhost:4000/api/scripts/generate-outline', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        logline,
+                        scriptType
+                    })
+                });
+
+                const data = await response.json();
+                showTestResult(data, response.ok);
+            } catch (error) {
+                console.error('API测试错误:', error);
+                showTestResult({ error: error.message }, false);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // 测试生成分集大纲API
+        async function testGenerateEpisodes() {
+            const outline = domElements.outline.value.trim();
+            const scriptType = domElements.scriptType.value;
+            const episodeCount = parseInt(domElements.episodeCount.value) || 10;
+
+            if (!outline) {
+                alert('请输入故事梗概');
+                return;
+            }
+
+            showLoading('正在测试生成分集大纲API...');
+
+            try {
+                const response = await fetch('http://localhost:4000/api/scripts/generate-episodes', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        outline,
+                        scriptType,
+                        episodeCount
+                    })
+                });
+
+                const data = await response.json();
+                showTestResult(data, response.ok);
+            } catch (error) {
+                console.error('API测试错误:', error);
+                showTestResult({ error: error.message }, false);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // 测试生成剧本内容API
+        async function testGenerateScript() {
+            const outline = domElements.scriptOutline.value.trim();
+            const episodesStr = domElements.episodes.value.trim();
+            const scriptType = domElements.scriptType.value;
+            const wordCount = parseInt(domElements.wordCount.value) || 5000;
+
+            if (!outline || !episodesStr) {
+                alert('请输入故事梗概和分集大纲');
+                return;
+            }
+
+            let episodes;
+            try {
+                episodes = JSON.parse(episodesStr);
+            } catch (e) {
+                alert('分集大纲格式不正确，请输入有效的JSON格式');
+                return;
+            }
+
+            showLoading('正在测试生成剧本内容API...');
+
+            try {
+                const response = await fetch('http://localhost:4000/api/scripts/generate-script', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        outline,
+                        episodes,
+                        scriptType,
+                        wordCount
+                    })
+                });
+
+                const data = await response.json();
+                showTestResult(data, response.ok);
+            } catch (error) {
+                console.error('API测试错误:', error);
+                showTestResult({ error: error.message }, false);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // 测试局部重写API
+        async function testRewriteSection() {
+            const content = domElements.contentToRewrite.value.trim();
+            const instruction = domElements.rewriteInstruction.value.trim();
+            const scriptType = domElements.scriptType.value;
+
+            if (!content || !instruction) {
+                alert('请输入需要重写的内容和重写指令');
+                return;
+            }
+
+            showLoading('正在测试局部重写API...');
+
+            try {
+                const response = await fetch('http://localhost:4000/api/scripts/rewrite-section', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        content,
+                        instruction,
+                        scriptType
+                    })
+                });
+
+                const data = await response.json();
+                showTestResult(data, response.ok);
+            } catch (error) {
+                console.error('API测试错误:', error);
+                showTestResult({ error: error.message }, false);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

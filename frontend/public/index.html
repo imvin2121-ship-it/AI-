@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>剧作AI - 智能剧本创作平台</title>
+  <!-- 引入Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入Font Awesome -->
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <!-- 引入Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  
+  <!-- 配置Tailwind - 统一配色方案 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#3b82f6', // 主色调：蓝色，与script-creator.html保持一致
+            secondary: '#6b7280', // 辅助色：灰色
+            accent: '#10b981', // 强调色：绿色
+            danger: '#ef4444', // 危险色：红色
+            dark: '#1e293b', // 深色：深蓝灰色
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            display: ['Montserrat', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+  
+  <!-- 自定义工具类 -->
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .text-shadow {
+        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      .transition-height {
+        transition: max-height 0.5s ease-in-out;
+      }
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      .step-active {
+        border-color: #3b82f6;
+        background-color: #3b82f6;
+        color: white;
+      }
+      .step-complete {
+        border-color: #3b82f6;
+        background-color: #3b82f6;
+        color: white;
+      }
+      .step-pending {
+        border-color: #E2E8F0;
+        background-color: white;
+        color: #94A3B8;
+      }
+      .step-line {
+        flex: 1;
+        height: 2px;
+        background-color: #E2E8F0;
+        transition: background-color 0.3s ease;
+      }
+      .step-line-active {
+        background-color: #3b82f6;
+      }
+      .step-line-complete {
+        background-color: #3b82f6;
+      }
+    }
+  </style>
+  
+  <style>
+    /* 全局动画定义 */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .animate-fade-in {
+      animation: fadeIn 0.5s ease-out forwards;
+    }
+    
+    /* 竖屏短剧海报容器样式 */
+    .vertical-poster-container {
+      position: relative;
+      width: 100%;
+      padding-top: 150%; /* 2:3 竖屏比例 */
+      overflow: hidden;
+    }
+    
+    .vertical-poster {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    
+    /* 编辑器样式 */
+    .editor-content {
+      min-height: 300px;
+      white-space: pre-wrap;
+    }
+    
+    /* 加载动画 */
+    .loader {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #3b82f6;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50 text-dark font-sans min-h-screen flex flex-col">
+  <!-- 导航栏 -->
+  <header id="navbar" class="fixed w-full bg-white/90 backdrop-blur-sm shadow-sm z-50 transition-all duration-300">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between items-center py-4">
+        <!-- Logo -->
+        <div class="flex items-center space-x-2">
+          <div class="w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-white">
+            <i class="fa fa-television text-xl"></i>
+          </div>
+          <span class="text-xl font-display font-bold text-dark">剧作AI</span>
+        </div>
+        
+        <!-- 桌面导航 -->
+        <nav class="hidden md:flex items-center space-x-8">
+          <a href="#features" class="text-gray-600 hover:text-primary transition-colors">功能</a>
+          <a href="#workflow" class="text-gray-600 hover:text-primary transition-colors">工作流程</a>
+          <a href="#pricing" class="text-gray-600 hover:text-primary transition-colors">定价</a>
+          <a href="#examples" class="text-gray-600 hover:text-primary transition-colors">案例</a>
+          <a href="script-creator.html" class="bg-primary text-white px-5 py-2 rounded-lg hover:bg-primary/90 transition-colors shadow-md hover:shadow-lg">
+            <i class="fa fa-edit mr-2"></i>开始创作
+          </a>
+        </nav>
+        
+        <!-- 用户操作按钮 -->
+        <div class="flex items-center space-x-4">
+          <div id="auth-buttons" class="flex items-center space-x-4">
+            <button id="login-btn" class="hidden sm:block px-4 py-2 text-primary border border-primary rounded-lg hover:bg-primary/5 transition-colors">登录</button>
+            <button id="start-trial-btn" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors shadow-md hover:shadow-lg">免费试用</button>
+          </div>
+          
+          <div id="user-profile" class="hidden items-center space-x-4">
+            <span id="username-display" class="font-medium"></span>
+            <button id="logout-btn" class="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors">退出</button>
+          </div>
+          
+          <!-- 移动端菜单按钮 -->
+          <button id="menu-toggle" class="md:hidden text-gray-600 hover:text-primary">
+            <i class="fa fa-bars text-xl"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 移动端导航菜单 -->
+    <div id="mobile-menu" class="md:hidden hidden bg-white border-t animate-fade-in">
+      <div class="container mx-auto px-4 py-3 space-y-3">
+        <a href="#features" class="block py-2 text-gray-600 hover:text-primary transition-colors">功能</a>
+        <a href="#workflow" class="block py-2 text-gray-600 hover:text-primary transition-colors">工作流程</a>
+        <a href="#pricing" class="block py-2 text-gray-600 hover:text-primary transition-colors">定价</a>
+        <a href="#examples" class="block py-2 text-gray-600 hover:text-primary transition-colors">案例</a>
+        <a href="script-creator.html" class="block py-3 text-center bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+          <i class="fa fa-edit mr-2"></i>开始创作
+        </a>
+        <button id="mobile-login-btn" class="block w-full py-2 text-primary hover:text-primary/80 transition-colors">登录</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主内容区 -->
+  <main class="flex-grow pt-20">
+    <!-- 英雄区域 -->
+    <section id="home-section" class="relative bg-gradient-to-br from-orange-50 to-accent overflow-hidden">
+      <div class="absolute top-0 right-0 w-1/2 h-full bg-primary/5 rounded-l-full -mr-20 -mt-20"></div>
+      <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24 relative z-10">
+        <div class="max-w-4xl mx-auto text-center">
+          <h1 class="text-[clamp(2.5rem,5vw,4rem)] font-display font-bold leading-tight text-dark mb-6 text-shadow">
+            释放创意，<span class="text-primary">轻松创作</span>专业剧本
+          </h1>
+          <p class="text-[clamp(1rem,2vw,1.25rem)] text-gray-600 mb-10 max-w-2xl mx-auto">
+            借助AI的力量，从灵感闪现到完整剧本，让创作过程更高效、更流畅。无论是原创还是改编，剧作AI都能助您一臂之力。
+          </p>
+          
+          <!-- 创作路径选择 -->
+          <div class="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto mb-12">
+            <div id="original-path" class="bg-white rounded-xl shadow-lg p-6 border-2 border-transparent hover:border-primary/50 transition-all cursor-pointer transform hover:-translate-y-1 duration-300">
+              <div class="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-4 mx-auto">
+                <i class="fa fa-lightbulb-o text-2xl text-primary"></i>
+              </div>
+              <h3 class="text-xl font-bold mb-2">原创剧本创作</h3>
+              <p class="text-gray-600">从一个灵感开始，逐步构建完整剧本</p>
+            </div>
+            
+            <div id="adapt-path" class="bg-white rounded-xl shadow-lg p-6 border-2 border-transparent hover:border-primary/50 transition-all cursor-pointer transform hover:-translate-y-1 duration-300">
+              <div class="w-14 h-14 rounded-full bg-secondary/10 flex items-center justify-center mb-4 mx-auto">
+                <i class="fa fa-book text-2xl text-secondary"></i>
+              </div>
+              <h3 class="text-xl font-bold mb-2">改编剧本创作</h3>
+              <p class="text-gray-600">将现有文本转化为精彩剧本</p>
+            </div>
+          </div>
+          
+          <div class="flex flex-col sm:flex-row justify-center gap-4">
+            <button id="create-script-btn" class="px-8 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors shadow-lg hover:shadow-xl text-lg font-medium">
+              开始免费试用 <i class="fa fa-arrow-right ml-2"></i>
+            </button>
+            <button id="watch-demo-btn" class="px-8 py-3 bg-white text-secondary rounded-lg hover:bg-gray-50 transition-colors shadow-md hover:shadow-lg text-lg font-medium border border-gray-200">
+              <i class="fa fa-play-circle mr-2"></i> 观看演示
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 装饰元素 -->
+      <div class="absolute -bottom-10 -left-10 w-40 h-40 bg-primary/10 rounded-full"></div>
+      <div class="absolute top-40 -right-20 w-60 h-60 bg-primary/5 rounded-full"></div>
+    </section>
+
+    <!-- 功能特点 -->
+    <section id="features" class="py-16 bg-white">
+      <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-16">
+          <h2 class="text-[clamp(1.5rem,3vw,2.5rem)] font-display font-bold text-dark mb-4">强大功能，助力创作</h2>
+          <p class="text-gray-600 max-w-2xl mx-auto">我们提供全方位的AI辅助工具，让剧本创作变得简单而高效</p>
+        </div>
+        
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <!-- 功能卡片 1 -->
+          <div class="bg-accent rounded-xl p-6 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+              <i class="fa fa-lightbulb-o text-xl text-primary"></i>
+            </div>
+            <h3 class="text-xl font-bold mb-2">创意激发</h3>
+            <p class="text-gray-600">输入关键词，AI帮您生成多个创意方向，突破思维局限</p>
+          </div>
+          
+          <!-- 功能卡片 2 -->
+          <div class="bg-accent rounded-xl p-6 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+              <i class="fa fa-sitemap text-xl text-primary"></i>
+            </div>
+            <h3 class="text-xl font-bold mb-2">智能大纲</h3>
+            <p class="text-gray-600">自动生成故事梗概和分集大纲，帮您构建完整的故事框架</p>
+          </div>
+          
+          <!-- 功能卡片 3 -->
+          <div class="bg-accent rounded-xl p-6 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+              <i class="fa fa-file-text-o text-xl text-primary"></i>
+            </div>
+            <h3 class="text-xl font-bold mb-2">剧本生成</h3>
+            <p class="text-gray-600">根据大纲自动生成符合标准格式的剧本正文，包含场景、对话和动作</p>
+          </div>
+          
+          <!-- 功能卡片 4 -->
+          <div class="bg-accent rounded-xl p-6 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+              <i class="fa fa-refresh text-xl text-primary"></i>
+            </div>
+            <h3 class="text-xl font-bold mb-2">局部重写</h3>
+            <p class="text-gray-600">对不满意的部分进行局部重写，AI根据您的指令进行精准修改</p>
+          </div>
+          
+          <!-- 功能卡片 5 -->
+          <div class="bg-accent rounded-xl p-6 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+              <i class="fa fa-book text-xl text-primary"></i>
+            </div>
+            <h3 class="text-xl font-bold mb-2">文本改编</h3>
+            <p class="text-gray-600">将小说、故事等文本内容改编为专业的剧本格式</p>
+          </div>
+          
+          <!-- 功能卡片 6 -->
+          <div class="bg-accent rounded-xl p-6 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+              <i class="fa fa-edit text-xl text-primary"></i>
+            </div>
+            <h3 class="text-xl font-bold mb-2">在线编辑</h3>
+            <p class="text-gray-600">内置在线编辑器，支持实时编辑和预览，提升创作效率</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 工作流程 -->
+    <section id="workflow" class="py-16 bg-accent">
+      <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-16">
+          <h2 class="text-[clamp(1.5rem,3vw,2.5rem)] font-display font-bold text-dark mb-4">简单三步，完成创作</h2>
+          <p class="text-gray-600 max-w-2xl mx-auto">从灵感闪现到完整剧本，我们提供清晰的创作流程</p>
+        </div>
+        
+        <div class="grid md:grid-cols-2 gap-16 items-center">
+          <!-- 左侧：原创剧本流程 -->
+          <div>
+            <h3 class="text-2xl font-bold mb-6 text-center">原创剧本创作流程</h3>
+            <div class="space-y-8">
+              <!-- 步骤1 -->
+              <div class="flex items-start space-x-4">
+                <div class="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold shrink-0">1</div>
+                <div>
+                  <h4 class="text-xl font-bold mb-2">输入灵感关键词</h4>
+                  <p class="text-gray-600">输入1-3个关键词，AI将基于这些关键词生成多个故事创意方向</p>
+                </div>
+              </div>
+              
+              <!-- 步骤2 -->
+              <div class="flex items-start space-x-4">
+                <div class="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold shrink-0">2</div>
+                <div>
+                  <h4 class="text-xl font-bold mb-2">生成大纲和剧本</h4>
+                  <p class="text-gray-600">选择喜欢的创意，AI将生成完整的故事梗概、分集大纲和剧本正文</p>
+                </div>
+              </div>
+              
+              <!-- 步骤3 -->
+              <div class="flex items-start space-x-4">
+                <div class="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold shrink-0">3</div>
+                <div>
+                  <h4 class="text-xl font-bold mb-2">精修与完善</h4>
+                  <p class="text-gray-600">对生成的内容进行修改和调整，AI可根据您的指令进行局部重写或续写</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 右侧：改编剧本流程 -->
+          <div>
+            <h3 class="text-2xl font-bold mb-6 text-center">改编剧本创作流程</h3>
+            <div class="space-y-8">
+              <!-- 步骤1 -->
+              <div class="flex items-start space-x-4">
+                <div class="w-10 h-10 rounded-full bg-secondary text-white flex items-center justify-center font-bold shrink-0">1</div>
+                <div>
+                  <h4 class="text-xl font-bold mb-2">上传原著文本</h4>
+                  <p class="text-gray-600">上传小说、故事等原著文本，AI将自动解析核心人物和情节</p>
+                </div>
+              </div>
+              
+              <!-- 步骤2 -->
+              <div class="flex items-start space-x-4">
+                <div class="w-10 h-10 rounded-full bg-secondary text-white flex items-center justify-center font-bold shrink-0">2</div>
+                <div>
+                  <h4 class="text-xl font-bold mb-2">设定改编规则</h4>
+                  <p class="text-gray-600">输入改编要求，如扩写/缩写、情节调整、人物修改等</p>
+                </div>
+              </div>
+              
+              <!-- 步骤3 -->
+              <div class="flex items-start space-x-4">
+                <div class="w-10 h-10 rounded-full bg-secondary text-white flex items-center justify-center font-bold shrink-0">3</div>
+                <div>
+                  <h4 class="text-xl font-bold mb-2">生成改编剧本</h4>
+                  <p class="text-gray-600">AI根据原著和改编规则生成全新的剧本大纲和内容，支持后续精修</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 案例展示 -->
+    <section id="examples" class="py-16 bg-white">
+      <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-16">
+          <h2 class="text-[clamp(1.5rem,3vw,2.5rem)] font-display font-bold text-dark mb-4">精彩案例</h2>
+          <p class="text-gray-600 max-w-2xl mx-auto">看看其他创作者如何使用我们的工具创作出精彩的剧本</p>
+        </div>
+        
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <!-- 案例1 -->
+          <div class="bg-accent rounded-xl overflow-hidden hover:shadow-lg transition-shadow">
+            <div class="vertical-poster-container">
+              <img src="https://picsum.photos/id/1/800/1200" alt="悬疑短剧案例" class="vertical-poster">
+            </div>
+            <div class="p-6">
+              <h3 class="text-xl font-bold mb-2">小镇迷雾</h3>
+              <p class="text-gray-600 mb-4">一部关于小镇医生揭露环境污染黑幕的悬疑短剧</p>
+              <div class="flex items-center text-sm text-gray-500">
+                <span class="flex items-center mr-4"><i class="fa fa-film mr-1"></i> 悬疑</span>
+                <span class="flex items-center"><i class="fa fa-file-text-o mr-1"></i> 20集</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 案例2 -->
+          <div class="bg-accent rounded-xl overflow-hidden hover:shadow-lg transition-shadow">
+            <div class="vertical-poster-container">
+              <img src="https://picsum.photos/id/20/800/1200" alt="爱情短剧案例" class="vertical-poster">
+            </div>
+            <div class="p-6">
+              <h3 class="text-xl font-bold mb-2">双城恋曲</h3>
+              <p class="text-gray-600 mb-4">一对分隔两地的恋人如何跨越距离和时间的爱情故事</p>
+              <div class="flex items-center text-sm text-gray-500">
+                <span class="flex items-center mr-4"><i class="fa fa-heart mr-1"></i> 爱情</span>
+                <span class="flex items-center"><i class="fa fa-file-text-o mr-1"></i> 30集</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 案例3 -->
+          <div class="bg-accent rounded-xl overflow-hidden hover:shadow-lg transition-shadow">
+            <div class="vertical-poster-container">
+              <img src="https://picsum.photos/id/30/800/1200" alt="科幻短剧案例" class="vertical-poster">
+            </div>
+            <div class="p-6">
+              <h3 class="text-xl font-bold mb-2">未来重启</h3>
+              <p class="text-gray-600 mb-4">在人工智能统治的未来世界，人类如何寻找自由的故事</p>
+              <div class="flex items-center text-sm text-gray-500">
+                <span class="flex items-center mr-4"><i class="fa fa-rocket mr-1"></i> 科幻</span>
+                <span class="flex items-center"><i class="fa fa-file-text-o mr-1"></i> 25集</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 定价方案 -->
+    <section id="pricing" class="py-16 bg-accent">
+      <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-16">
+          <h2 class="text-[clamp(1.5rem,3vw,2.5rem)] font-display font-bold text-dark mb-4">灵活定价，满足不同需求</h2>
+          <p class="text-gray-600 max-w-2xl mx-auto">选择最适合您的套餐，开启创作之旅</p>
+        </div>
+        
+        <div class="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          <!-- 免费套餐 -->
+          <div class="bg-white rounded-xl shadow-lg p-8 hover:shadow-xl transition-shadow">
+            <h3 class="text-xl font-bold mb-2">免费体验</h3>
+            <div class="text-4xl font-bold mb-6">¥0<span class="text-base font-normal text-gray-500">/月</span></div>
+            <ul class="space-y-3 mb-8">
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 每月生成3个剧本创意</li>
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 生成1个完整剧本</li>
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 基础编辑功能</li>
+              <li class="flex items-center text-gray-400"><i class="fa fa-times mr-2"></i> 无AI重写功能</li>
+              <li class="flex items-center text-gray-400"><i class="fa fa-times mr-2"></i> 无文本改编功能</li>
+            </ul>
+            <button class="w-full py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">开始免费体验</button>
+          </div>
+          
+          <!-- 创作者套餐 -->
+          <div class="bg-white rounded-xl shadow-xl p-8 border-2 border-primary transform md:scale-105 transition-transform">
+            <div class="absolute top-0 right-0 bg-primary text-white px-4 py-1 rounded-bl-lg text-sm font-medium">最受欢迎</div>
+            <h3 class="text-xl font-bold mb-2">创作者</h3>
+            <div class="text-4xl font-bold mb-6">¥99<span class="text-base font-normal text-gray-500">/月</span></div>
+            <ul class="space-y-3 mb-8">
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 每月生成50个剧本创意</li>
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 生成10个完整剧本</li>
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 完整编辑功能</li>
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 无限AI重写功能</li>
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 文本改编功能</li>
+            </ul>
+            <button class="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors shadow-md">立即订阅</button>
+          </div>
+          
+          <!-- 专业套餐 -->
+          <div class="bg-white rounded-xl shadow-lg p-8 hover:shadow-xl transition-shadow">
+            <h3 class="text-xl font-bold mb-2">专业团队</h3>
+            <div class="text-4xl font-bold mb-6">¥299<span class="text-base font-normal text-gray-500">/月</span></div>
+            <ul class="space-y-3 mb-8">
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 无限剧本创意生成</li>
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 生成50个完整剧本</li>
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 完整编辑功能</li>
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 无限AI重写功能</li>
+              <li class="flex items-center"><i class="fa fa-check text-primary mr-2"></i> 高级文本改编功能</li>
+            </ul>
+            <button class="w-full py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">联系销售</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 剧本创作界面 (默认隐藏) -->
+    <section id="script-creation" class="py-8 bg-white hidden">
+      <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <!-- 步骤指示器 -->
+        <div id="steps-indicator" class="flex items-center justify-between mb-8 px-4">
+          <div class="flex flex-col items-center">
+            <div class="w-10 h-10 rounded-full border-2 step-active flex items-center justify-center mb-2">
+              <span class="font-bold">1</span>
+            </div>
+            <span class="text-sm">输入灵感</span>
+          </div>
+          <div class="step-line step-line-active"></div>
+          <div class="flex flex-col items-center">
+            <div class="w-10 h-10 rounded-full border-2 step-pending flex items-center justify-center mb-2">
+              <span class="font-bold">2</span>
+            </div>
+            <span class="text-sm">选择创意</span>
+          </div>
+          <div class="step-line"></div>
+          <div class="flex flex-col items-center">
+            <div class="w-10 h-10 rounded-full border-2 step-pending flex items-center justify-center mb-2">
+              <span class="font-bold">3</span>
+            </div>
+            <span class="text-sm">完善梗概</span>
+          </div>
+          <div class="step-line"></div>
+          <div class="flex flex-col items-center">
+            <div class="w-10 h-10 rounded-full border-2 step-pending flex items-center justify-center mb-2">
+              <span class="font-bold">4</span>
+            </div>
+            <span class="text-sm">生成分集</span>
+          </div>
+          <div class="step-line"></div>
+          <div class="flex flex-col items-center">
+            <div class="w-10 h-10 rounded-full border-2 step-pending flex items-center justify-center mb-2">
+              <span class="font-bold">5</span>
+            </div>
+            <span class="text-sm">生成剧本</span>
+          </div>
+        </div>
+        
+        <!-- 剧本创作内容区 -->
+        <div id="script-creation-content" class="bg-white rounded-xl shadow-md p-6">
+          <!-- 步骤1：输入关键词 (默认显示) -->
+          <div id="step1" class="animate-fade-in">
+            <h2 class="text-2xl font-bold mb-6">输入灵感关键词</h2>
+            <p class="text-gray-600 mb-6">输入1-3个关键词，AI将基于这些关键词为您生成故事创意</p>
+            
+            <div class="mb-6">
+              <label class="block text-gray-700 mb-2">关键词 (用逗号分隔)</label>
+              <input type="text" id="keywords-input" placeholder="例如：重生, 复仇, 女总裁" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+            </div>
+            
+            <div class="flex justify-end">
+              <button id="generate-loglines-btn" class="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors shadow-md">
+                生成创意 <i class="fa fa-arrow-right ml-2"></i>
+              </button>
+            </div>
+          </div>
+          
+          <!-- 步骤2：选择故事创意 (默认隐藏) -->
+          <div id="step2" class="hidden animate-fade-in">
+            <h2 class="text-2xl font-bold mb-6">选择故事创意</h2>
+            <p class="text-gray-600 mb-6">请从以下AI生成的创意中选择一个，我们将基于此生成故事梗概</p>
+            
+            <div id="loglines-container" class="space-y-4 mb-6">
+              <!-- 这里将动态生成故事创意选项 -->
+            </div>
+            
+            <div class="flex justify-between">
+              <button id="back-to-step1-btn" class="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+                <i class="fa fa-arrow-left mr-2"></i> 返回
+              </button>
+              <button id="generate-outline-btn" class="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors shadow-md hidden" disabled>
+                生成梗概 <i class="fa fa-arrow-right ml-2"></i>
+              </button>
+            </div>
+          </div>
+          
+          <!-- 其他步骤将在JavaScript中动态生成 -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="bg-white border-t border-gray-200 mt-12 py-6">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid md:grid-cols-4 gap-8">
+        <!-- Logo 和简介 -->
+        <div class="md:col-span-1">
+          <div class="flex items-center space-x-2 mb-4">
+            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium">
+              <i class="fa fa-film text-primary text-xl"></i>
+            </div>
+            <span class="text-xl font-bold text-dark">AI剧本创作平台</span>
+          </div>
+          <p class="text-gray-500 mb-4">让剧本创作变得简单而高效</p>
+          <div class="flex space-x-4">
+            <a href="#" class="text-gray-500 hover:text-primary transition-colors"><i class="fa fa-weixin text-xl"></i></a>
+            <a href="#" class="text-gray-500 hover:text-primary transition-colors"><i class="fa fa-weibo text-xl"></i></a>
+            <a href="#" class="text-gray-500 hover:text-primary transition-colors"><i class="fa fa-github text-xl"></i></a>
+          </div>
+        </div>
+        
+        <!-- 产品 -->
+        <div>
+          <h3 class="text-lg font-bold text-dark mb-4">产品</h3>
+          <ul class="space-y-2">
+            <li><a href="#features" class="text-gray-500 hover:text-primary transition-colors">功能特点</a></li>
+            <li><a href="#pricing" class="text-gray-500 hover:text-primary transition-colors">定价方案</a></li>
+            <li><a href="#examples" class="text-gray-500 hover:text-primary transition-colors">成功案例</a></li>
+            <li><a href="#" class="text-gray-500 hover:text-primary transition-colors">API接口</a></li>
+          </ul>
+        </div>
+        
+        <!-- 资源 -->
+        <div>
+          <h3 class="text-lg font-bold text-dark mb-4">资源</h3>
+          <ul class="space-y-2">
+            <li><a href="#" class="text-gray-500 hover:text-primary transition-colors">帮助中心</a></li>
+            <li><a href="#" class="text-gray-500 hover:text-primary transition-colors">创作指南</a></li>
+            <li><a href="#" class="text-gray-500 hover:text-primary transition-colors">模板库</a></li>
+            <li><a href="#" class="text-gray-500 hover:text-primary transition-colors">开发者文档</a></li>
+          </ul>
+        </div>
+        
+        <!-- 公司 -->
+        <div>
+          <h3 class="text-lg font-bold text-dark mb-4">公司</h3>
+          <ul class="space-y-2">
+            <li><a href="#" class="text-gray-500 hover:text-primary transition-colors">关于我们</a></li>
+            <li><a href="#" class="text-gray-500 hover:text-primary transition-colors">联系方式</a></li>
+            <li><a href="#" class="text-gray-500 hover:text-primary transition-colors">隐私政策</a></li>
+            <li><a href="#" class="text-gray-500 hover:text-primary transition-colors">服务条款</a></li>
+          </ul>
+        </div>
+      </div>
+      
+      <div class="border-t border-gray-200 mt-8 pt-8 text-center text-gray-500">
+        <p>© 2023 AI剧本创作平台 版权所有</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 模态框 (登录/注册) -->
+  <div id="auth-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center">
+    <div class="bg-white rounded-xl shadow-xl p-8 max-w-md w-full mx-4 animate-fade-in">
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="text-2xl font-bold" id="modal-title">登录</h3>
+        <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times text-xl"></i></button>
+      </div>
+      
+      <div id="login-form" class="space-y-4">
+        <div>
+          <label class="block text-dark mb-2">用户名</label>
+          <input type="text" id="login-username" placeholder="请输入用户名" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+        </div>
+        <div>
+          <label class="block text-dark mb-2">密码</label>
+          <input type="password" id="login-password" placeholder="请输入密码" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+        </div>
+        <div class="flex items-center">
+          <input type="checkbox" id="remember-me" class="mr-2">
+          <label for="remember-me" class="text-secondary">记住我</label>
+        </div>
+        <button id="submit-login-btn" class="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors shadow-md">登录</button>
+        <p class="text-center text-secondary">
+          还没有账号？ <button id="switch-to-register-btn" class="text-primary hover:text-primary/80">立即注册</button>
+        </p>
+      </div>
+      
+      <div id="register-form" class="space-y-4 hidden">
+        <div>
+          <label class="block text-dark mb-2">用户名</label>
+          <input type="text" id="register-username" placeholder="请输入用户名" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+        </div>
+        <div>
+          <label class="block text-dark mb-2">密码</label>
+          <input type="password" id="register-password" placeholder="请设置密码" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+        </div>
+        <div>
+          <label class="block text-dark mb-2">确认密码</label>
+          <input type="password" id="confirm-password" placeholder="请再次输入密码" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+        </div>
+        <button id="submit-register-btn" class="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors shadow-md">注册</button>
+        <p class="text-center text-secondary">
+          已有账号？ <button id="switch-to-login-btn" class="text-primary hover:text-primary/80">立即登录</button>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 加载中提示 -->
+  <div id="loading-indicator" class="fixed inset-0 bg-black/30 z-50 hidden flex items-center justify-center">
+    <div class="bg-white rounded-lg p-6 flex flex-col items-center">
+      <div class="loader mb-4"></div>
+      <p id="loading-message" class="text-gray-700">正在处理...</p>
+    </div>
+  </div>
+
+  <!-- JavaScript -->
+  <script src="app.js"></script>
+</body>
+</html>
