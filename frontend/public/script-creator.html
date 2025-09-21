@@ -13,6 +13,7 @@
                 extend: {
                     colors: {
                         primary: '#1DD9FF',
+                        'primary-dark': '#18b7e3',
                         secondary: '#E4530A',
                         accent: '#BEFF33',
                         danger: '#ef4444',
@@ -394,7 +395,43 @@
         </div>
     </div>
 
-    <!-- 独立的剧本创作页面脚本 -->
-    <script src="script-creator.js"></script>
+    <!-- 模块化脚本 - 合并为一个入口文件 -->
+    <script type="module">
+        // 导入必要的模块
+        import * as API from './api.js';
+        
+        // 确保window对象上有API
+        window.API = API;
+        
+        // 延迟加载主脚本，让浏览器有时间加载其他资源
+        document.addEventListener('DOMContentLoaded', function() {
+            // 创建一个非模块化的版本来处理可能的兼容性问题
+            const mainScript = document.createElement('script');
+            mainScript.src = 'script-creator.js.nonmodular';
+            document.body.appendChild(mainScript);
+        });
+    </script>
+    
+    <!-- 回退：非模块化版本 -->
+    <script id="fallback-script" type="text/javascript">
+        // 如果模块加载失败，创建全局对象
+        window.API = {
+            checkUserLoginStatus: function() { return Promise.resolve({success: false, demo: true}); },
+            logoutUser: function() { return Promise.resolve(false); },
+            saveScriptToServer: function() { return Promise.resolve({success: false}); }
+        };
+        
+        window.appState = {
+            currentStep: 0,
+            scriptType: '竖屏短剧',
+            episodeCount: 60,
+            wordCount: 800
+        };
+        
+        // 基础UI函数
+        function showToast(message) { alert(message); }
+        function showLoading() {}
+        function hideLoading() {}
+    </script>
 </body>
 </html>

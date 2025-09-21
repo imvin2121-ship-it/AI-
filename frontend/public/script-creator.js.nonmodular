@@ -1,0 +1,559 @@
+// 剧本创作页面主脚本 - 非模块化版本，确保在任何浏览器中都能运行
+
+// 全局应用状态
+window.appState = {
+    currentStep: 0,
+    scriptType: '竖屏短剧',
+    episodeCount: 60,
+    wordCount: 800,
+    currentUser: null,
+    scriptData: {
+        title: '未命名剧本',
+        loglines: [],
+        outline: '',
+        outlinePoints: null,
+        episodes: [],
+        scriptContent: '',
+        selectedLogline: null,
+        currentEpisodeIndex: 0
+    },
+    genreType: '',
+    selectedGenres: []
+};
+
+// 富文本编辑器实例缓存
+window.richTextEditors = {};
+
+// 任务管理器
+window.taskManager = {
+    activeTasks: {},
+    taskStatusCallbacks: {},
+    progressBar: null,
+    progressText: null,
+    cancelBtn: null,
+    progressContainer: null,
+    progressPercentage: null,
+    
+    initTaskUI: function() {
+        if (!this.progressContainer) {
+            const progressContainer = document.createElement('div');
+            progressContainer.className = 'fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-white p-4 rounded-lg shadow-lg z-40 w-11/12 max-w-md';
+            progressContainer.innerHTML = `
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="font-bold text-gray-800">任务进度</h3>
+                    <button id="cancel-task-btn" class="text-gray-500 hover:text-red-500 transition-colors">
+                        <i class="fa fa-times"></i>
+                    </button>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                    <div id="progress-bar" class="bg-primary h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span id="progress-text" class="text-sm text-gray-600">正在处理...</span>
+                    <span id="progress-percentage" class="text-sm font-medium text-primary">0%</span>
+                </div>
+            `;
+            document.body.appendChild(progressContainer);
+            
+            this.progressBar = progressContainer.querySelector('#progress-bar');
+            this.progressText = progressContainer.querySelector('#progress-text');
+            this.progressPercentage = progressContainer.querySelector('#progress-percentage');
+            this.cancelBtn = progressContainer.querySelector('#cancel-task-btn');
+            this.progressContainer = progressContainer;
+            
+            const self = this;
+            this.cancelBtn.addEventListener('click', function() {
+                const activeTaskId = Object.keys(self.activeTasks)[0];
+                if (activeTaskId) {
+                    self.cancelTask(activeTaskId);
+                }
+            });
+        }
+    },
+    
+    createTask: async function(endpoint, payload, onSuccess, onError, onProgress) {
+        this.initTaskUI();
+        
+        try {
+            showLoading('正在创建任务...');
+            
+            const result = await window.API.createTask(endpoint, payload);
+            
+            if (!result.success) {
+                throw new Error(result.data?.message || '创建任务失败');
+            }
+            
+            const data = result.data;
+            this.activeTasks[data.taskId] = {
+                startTime: Date.now(),
+                endpoint: endpoint
+            };
+            
+            if (onProgress) {
+                this.taskStatusCallbacks[data.taskId] = {
+                    onSuccess,
+                    onError,
+                    onProgress
+                };
+            }
+            
+            this.progressContainer.classList.remove('hidden');
+            hideLoading();
+            
+            this.pollTaskStatus(data.taskId, onSuccess, onError, onProgress);
+            
+            return data.taskId;
+        } catch (error) {
+            hideLoading();
+            if (onError) {
+                onError(error);
+            } else {
+                showToast(error.message || '创建任务失败');
+            }
+            throw error;
+        }
+    },
+    
+    pollTaskStatus: async function(taskId, onSuccess, onError, onProgress) {
+        try {
+            let interval = 2000;
+            const maxInterval = 10000;
+            const maxPollingTime = 5 * 60 * 1000;
+            const startTime = Date.now();
+            
+            while (Date.now() - startTime < maxPollingTime && this.activeTasks[taskId]) {
+                const result = await window.API.getTaskStatus(taskId);
+                
+                if (!result.success) {
+                    throw new Error(result.data?.message || '获取任务状态失败');
+                }
+                
+                const data = result.data;
+                const progress = data.progress || 0;
+                
+                // 更新进度UI
+                if (this.progressBar) {
+                    this.progressBar.style.width = progress + '%';
+                }
+                if (this.progressText) {
+                    this.progressText.textContent = data.statusMessage || '正在处理...';
+                }
+                if (this.progressPercentage) {
+                    this.progressPercentage.textContent = progress + '%';
+                }
+                
+                if (onProgress) {
+                    onProgress(data);
+                }
+                
+                if (data.status === 'completed') {
+                    this.progressContainer.classList.add('hidden');
+                    if (onSuccess) {
+                        onSuccess(data.result);
+                    }
+                    delete this.activeTasks[taskId];
+                    if (this.taskStatusCallbacks[taskId]) {
+                        delete this.taskStatusCallbacks[taskId];
+                    }
+                    return;
+                }
+                
+                if (data.status === 'failed') {
+                    this.progressContainer.classList.add('hidden');
+                    if (onError) {
+                        onError(new Error(data.errorMessage || '任务执行失败'));
+                    } else {
+                        showToast(data.errorMessage || '任务执行失败');
+                    }
+                    delete this.activeTasks[taskId];
+                    if (this.taskStatusCallbacks[taskId]) {
+                        delete this.taskStatusCallbacks[taskId];
+                    }
+                    return;
+                }
+                
+                interval = Math.min(interval + 500, maxInterval);
+                await new Promise(resolve => setTimeout(resolve, interval));
+            }
+        } catch (error) {
+            this.progressContainer.classList.add('hidden');
+            if (onError) {
+                onError(error);
+            } else {
+                showToast(error.message || '任务执行失败');
+            }
+            delete this.activeTasks[taskId];
+            if (this.taskStatusCallbacks[taskId]) {
+                delete this.taskStatusCallbacks[taskId];
+            }
+        }
+    },
+    
+    cancelTask: async function(taskId) {
+        try {
+            const result = await window.API.cancelTask(taskId);
+            if (result.success) {
+                showToast('任务已取消');
+            }
+            this.progressContainer.classList.add('hidden');
+            delete this.activeTasks[taskId];
+            if (this.taskStatusCallbacks[taskId]) {
+                delete this.taskStatusCallbacks[taskId];
+            }
+            return result.success;
+        } catch (error) {
+            showToast('取消任务失败');
+            return false;
+        }
+    }
+};
+
+// 自动保存功能
+window.autoSave = {
+    saveState: function() {
+        if (typeof window.saveStateToLocalStorage === 'function') {
+            window.saveStateToLocalStorage(window.appState);
+        }
+    },
+    scheduleSave: function() {
+        if (typeof window.startAutoSaveTimer === 'function') {
+            window.startAutoSaveTimer();
+        }
+    }
+};
+
+// DOM元素缓存
+window.domElements = {
+    scriptTitle: document.getElementById('script-title'),
+    scriptTypeDisplay: document.getElementById('script-type-display'),
+    episodeCountDisplay: document.getElementById('episode-count-display'),
+    lastUpdated: document.getElementById('last-updated'),
+    backBtn: document.getElementById('back-btn'),
+    previewBtn: document.getElementById('preview-btn'),
+    prevStepBtn: document.getElementById('prev-step-btn'),
+    nextStepBtn: document.getElementById('next-step-btn'),
+    loadingOverlay: document.getElementById('loading-overlay'),
+    loadingMessage: document.getElementById('loading-message')
+};
+
+// UI函数
+function showLoading(message) {
+    if (window.domElements.loadingOverlay) {
+        window.domElements.loadingOverlay.classList.remove('hidden');
+    }
+    if (window.domElements.loadingMessage && message) {
+        window.domElements.loadingMessage.textContent = message;
+    }
+}
+
+function hideLoading() {
+    if (window.domElements.loadingOverlay) {
+        window.domElements.loadingOverlay.classList.add('hidden');
+    }
+}
+
+function showToast(message, duration = 3000) {
+    // 创建toast元素
+    const toast = document.createElement('div');
+    toast.className = 'fixed top-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-md shadow-lg z-50 transform transition-all duration-300 translate-x-full';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // 显示toast
+    setTimeout(() => {
+        toast.classList.remove('translate-x-full');
+    }, 10);
+    
+    // 自动隐藏
+    setTimeout(() => {
+        toast.classList.add('translate-x-full');
+        setTimeout(() => {
+            document.body.removeChild(toast);
+        }, 300);
+    }, duration);
+}
+
+function updateUserDisplay(user) {
+    // 简单实现，实际项目中可能需要更复杂的逻辑
+    window.appState.currentUser = user;
+}
+
+function updateScriptTitle(title) {
+    if (window.domElements.scriptTitle) {
+        window.domElements.scriptTitle.value = title || '未命名剧本';
+        window.appState.scriptData.title = title || '未命名剧本';
+    }
+}
+
+function updateLastUpdated() {
+    if (window.domElements.lastUpdated) {
+        const now = new Date();
+        const timeString = now.getHours().toString().padStart(2, '0') + ':' + 
+                          now.getMinutes().toString().padStart(2, '0');
+        window.domElements.lastUpdated.textContent = '最后更新: ' + timeString;
+    }
+}
+
+// 工作流函数
+goToStep = function(stepIndex) {
+    window.appState.currentStep = stepIndex;
+    updateStepNavigation();
+    updateStepButtons();
+};
+
+goToPrevStep = function() {
+    if (window.appState.currentStep > 0) {
+        goToStep(window.appState.currentStep - 1);
+    }
+};
+
+goToNextStep = function() {
+    // 简单实现，实际项目中可能需要验证当前步骤的数据
+    goToStep(window.appState.currentStep + 1);
+};
+
+function updateStepNavigation() {
+    // 创建步骤导航
+    const mainContent = document.querySelector('main .container > div');
+    if (!mainContent) return;
+    
+    // 检查是否已有步骤导航
+    let stepNav = document.querySelector('.step-navigation');
+    if (!stepNav) {
+        stepNav = document.createElement('div');
+        stepNav.className = 'step-navigation flex flex-wrap justify-between items-center mb-8';
+        mainContent.insertBefore(stepNav, mainContent.firstChild);
+    }
+    
+    // 更新步骤导航内容
+    const steps = ['剧本设置', '故事创意', '分集大纲', '剧本创作', '剧本编辑', '导出完成'];
+    let html = '';
+    
+    steps.forEach((step, index) => {
+        const isActive = index === window.appState.currentStep;
+        const isCompleted = index < window.appState.currentStep;
+        const stepClass = isActive ? 'bg-primary text-white' : 
+                         (isCompleted ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500');
+        
+        html += `<div class="flex flex-col items-center">
+            <div class="w-10 h-10 rounded-full ${stepClass} flex items-center justify-center font-bold mb-2">
+                ${isCompleted ? '<i class="fa fa-check"></i>' : index + 1}
+            </div>
+            <span class="text-sm font-medium ${isActive ? 'text-primary' : 'text-gray-500'}">${step}</span>
+        </div>`;
+        
+        // 添加连接线
+        if (index < steps.length - 1) {
+            const lineClass = index < window.appState.currentStep ? 'bg-green-500' : 'bg-gray-200';
+            html += `<div class="flex-1 h-1 ${lineClass} mx-2"></div>`;
+        }
+    });
+    
+    stepNav.innerHTML = html;
+}
+
+function updateStepButtons() {
+    if (window.domElements.prevStepBtn) {
+        window.domElements.prevStepBtn.classList.toggle('hidden', window.appState.currentStep === 0);
+    }
+    
+    if (window.domElements.nextStepBtn) {
+        // 最后一步时改变按钮文字
+        if (window.appState.currentStep === 5) {
+            window.domElements.nextStepBtn.innerHTML = '<i class="fa fa-download mr-2"></i>导出剧本';
+        } else {
+            window.domElements.nextStepBtn.innerHTML = '下一步<i class="fa fa-arrow-right ml-2"></i>';
+        }
+    }
+}
+
+// 初始化应用
+document.addEventListener('DOMContentLoaded', function() {
+    // 检查用户登录状态
+    window.API.checkUserLoginStatus().then(result => {
+        if (result.success && result.user) {
+            updateUserDisplay(result.user);
+        }
+    }).catch(error => {
+        console.error('检查用户登录状态失败:', error);
+    });
+    
+    // 初始化步骤导航
+    updateStepNavigation();
+    updateStepButtons();
+    
+    // 绑定事件监听器
+    if (window.domElements.scriptTitle) {
+        window.domElements.scriptTitle.addEventListener('input', function() {
+            window.appState.scriptData.title = this.value;
+            updateLastUpdated();
+            window.autoSave.scheduleSave();
+        });
+    }
+    
+    if (window.domElements.backBtn) {
+        window.domElements.backBtn.addEventListener('click', function() {
+            window.location.href = '/index.html';
+        });
+    }
+    
+    if (window.domElements.prevStepBtn) {
+        window.domElements.prevStepBtn.addEventListener('click', goToPrevStep);
+    }
+    
+    if (window.domElements.nextStepBtn) {
+        window.domElements.nextStepBtn.addEventListener('click', goToNextStep);
+    }
+    
+    // 初始化UI
+    updateScriptTitle(window.appState.scriptData.title);
+    updateLastUpdated();
+    
+    // 绑定剧本类型选择事件
+    const scriptTypeOptions = document.querySelectorAll('.script-type-option');
+    scriptTypeOptions.forEach(option => {
+        // 跳过开发中的选项
+        if (option.classList.contains('opacity-50')) return;
+        
+        option.addEventListener('click', function() {
+            // 更新选中状态
+            scriptTypeOptions.forEach(opt => {
+                opt.classList.remove('border-primary', 'bg-primary-5');
+                opt.classList.add('border-gray-200');
+            });
+            this.classList.remove('border-gray-200');
+            this.classList.add('border-primary', 'bg-primary-5');
+            
+            // 更新应用状态
+            const scriptType = this.getAttribute('data-type');
+            window.appState.scriptType = scriptType;
+            
+            // 更新显示
+            if (window.domElements.scriptTypeDisplay) {
+                window.domElements.scriptTypeDisplay.textContent = scriptType;
+            }
+            
+            // 显示剧本设置和创作类型选择
+            const scriptSettings = document.getElementById('script-settings');
+            const creationTypeSection = document.getElementById('creation-type-section');
+            if (scriptSettings) {
+                scriptSettings.classList.remove('hidden');
+                scriptSettings.classList.add('animate-fade-in');
+            }
+            if (creationTypeSection) {
+                creationTypeSection.classList.remove('hidden');
+                creationTypeSection.classList.add('animate-fade-in');
+            }
+            
+            // 自动保存
+            window.autoSave.scheduleSave();
+        });
+    });
+    
+    // 绑定剧集设置输入事件
+    const episodeCountInput = document.getElementById('episode-count');
+    if (episodeCountInput) {
+        episodeCountInput.addEventListener('input', function() {
+            window.appState.episodeCount = parseInt(this.value) || 1;
+            
+            // 更新显示
+            if (window.domElements.episodeCountDisplay) {
+                window.domElements.episodeCountDisplay.textContent = window.appState.episodeCount;
+            }
+            
+            // 自动保存
+            window.autoSave.scheduleSave();
+        });
+    }
+    
+    const wordCountInput = document.getElementById('word-count');
+    if (wordCountInput) {
+        wordCountInput.addEventListener('input', function() {
+            window.appState.wordCount = parseInt(this.value) || 500;
+            
+            // 自动保存
+            window.autoSave.scheduleSave();
+        });
+    }
+    
+    // 绑定创作方式选择事件
+    const startOriginalBtn = document.getElementById('start-original-btn');
+    const startAdaptBtn = document.getElementById('start-adapt-btn');
+    
+    if (startOriginalBtn) {
+        startOriginalBtn.addEventListener('click', function() {
+            // 更新选中状态
+            startOriginalBtn.classList.remove('border-gray-200');
+            startOriginalBtn.classList.add('border-primary', 'bg-primary-5', 'text-primary');
+            
+            if (startAdaptBtn) {
+                startAdaptBtn.classList.remove('border-primary', 'bg-primary-5', 'text-primary');
+                startAdaptBtn.classList.add('border-gray-200');
+            }
+            
+            // 设置创作方式
+            window.appState.creationType = 'original';
+            
+            // 自动保存
+            window.autoSave.scheduleSave();
+        });
+    }
+    
+    if (startAdaptBtn) {
+        startAdaptBtn.addEventListener('click', function() {
+            // 更新选中状态
+            startAdaptBtn.classList.remove('border-gray-200');
+            startAdaptBtn.classList.add('border-primary', 'bg-primary-5', 'text-primary');
+            
+            if (startOriginalBtn) {
+                startOriginalBtn.classList.remove('border-primary', 'bg-primary-5', 'text-primary');
+                startOriginalBtn.classList.add('border-gray-200');
+            }
+            
+            // 设置创作方式
+            window.appState.creationType = 'adapt';
+            
+            // 自动保存
+            window.autoSave.scheduleSave();
+        });
+    }
+    
+    // 绑定步骤导航点击事件
+    for (let i = 0; i <= 5; i++) {
+        const stepNavBtn = document.getElementById(`step-nav-${i}`);
+        if (stepNavBtn) {
+            stepNavBtn.addEventListener('click', function() {
+                goToStep(i);
+            });
+        }
+    }
+    
+    // 加载页面时显示Toast提示
+    setTimeout(() => {
+        showToast('剧本创作工具已准备就绪');
+    }, 1000);
+    
+    // 初始显示第一个剧本类型为选中状态
+    const firstTypeOption = document.querySelector('.script-type-option:not(.opacity-50)');
+    if (firstTypeOption) {
+        // 手动触发点击事件来初始化状态
+        firstTypeOption.click();
+    }
+    
+    // 初始显示原创剧本为选中状态
+    if (startOriginalBtn) {
+        startOriginalBtn.classList.remove('border-primary', 'bg-primary-5', 'text-primary');
+        startOriginalBtn.click();
+    }
+});
+
+// 确保所有关键函数都在window对象上可用
+window.showLoading = showLoading;
+window.hideLoading = hideLoading;
+window.showToast = showToast;
+window.updateUserDisplay = updateUserDisplay;
+window.updateScriptTitle = updateScriptTitle;
+window.updateLastUpdated = updateLastUpdated;
+window.goToStep = goToStep;
+window.goToPrevStep = goToPrevStep;
+window.goToNextStep = goToNextStep;

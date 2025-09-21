@@ -1,0 +1,812 @@
+// 剧本创作页面主模块 - 使用模块化结构
+import * as API from './api.js';
+import { domElements, showLoading, hideLoading, showToast, updateUserDisplay, toggleUserMenu, updateScriptTitle, updateLastUpdated, initTaskUI, updateProgressUI } from './ui.js';
+import { goToStep, goToPrevStep, goToNextStep, updateStepNavigation, updateStepButtons, workflowActions } from './workflow.js';
+
+// 从utils.js中获取自动保存功能（在模块模式下，它会被暴露为全局变量）
+const autoSave = {
+    saveState() {
+        if (window.saveStateToLocalStorage) {
+            window.saveStateToLocalStorage(window.appState || appState);
+        }
+    },
+    scheduleSave() {
+        if (window.startAutoSaveTimer) {
+            window.startAutoSaveTimer();
+        }
+    }
+};
+
+// 全局应用状态
+export const appState = {
+    currentStep: 0,
+    scriptType: '竖屏短剧',
+    episodeCount: 60,
+    wordCount: 800,
+    currentUser: null,
+    scriptData: {
+        title: '未命名剧本',
+        loglines: [],
+        outline: '',
+        outlinePoints: null, // 大纲要点
+        episodes: [],
+        scriptContent: '',
+        selectedLogline: null,
+        currentEpisodeIndex: 0
+    },
+    // 新增的题材相关状态
+    genreType: '', // 女频/男频
+    selectedGenres: [] // 选择的热门题材
+};
+
+// 富文本编辑器实例缓存
+export const richTextEditors = {};
+
+// 任务管理器 - 用于处理异步任务
+export const taskManager = {
+    activeTasks: {},
+    taskStatusCallbacks: {},
+    progressBar: null,
+    progressText: null,
+    cancelBtn: null,
+    progressContainer: null,
+    progressPercentage: null,
+    
+    // 初始化任务UI
+    initTaskUI() {
+        if (!this.progressContainer) {
+            const uiElements = initTaskUI();
+            this.progressBar = uiElements.progressBar;
+            this.progressText = uiElements.progressText;
+            this.progressPercentage = uiElements.progressPercentage;
+            this.cancelBtn = uiElements.cancelBtn;
+            this.progressContainer = uiElements.progressContainer;
+            
+            // 绑定取消按钮事件
+            this.cancelBtn.addEventListener('click', () => {
+                const activeTaskId = Object.keys(this.activeTasks)[0];
+                if (activeTaskId) {
+                    this.cancelTask(activeTaskId);
+                }
+            });
+        }
+    },
+    
+    // 创建新任务
+    async createTask(endpoint, payload, onSuccess, onError, onProgress) {
+        this.initTaskUI();
+        
+        try {
+            // 显示加载状态
+            showLoading('正在创建任务...');
+            
+            // 创建任务
+            const result = await API.createTask(endpoint, payload);
+            
+            if (!result.success) {
+                throw new Error(result.data?.message || '创建任务失败');
+            }
+            
+            const data = result.data;
+            
+            // 记录任务信息
+            this.activeTasks[data.taskId] = {
+                startTime: Date.now(),
+                endpoint: endpoint
+            };
+            
+            // 保存回调
+            if (onProgress) {
+                this.taskStatusCallbacks[data.taskId] = {
+                    onSuccess,
+                    onError,
+                    onProgress
+                };
+            }
+            
+            // 显示进度条
+            this.progressContainer.classList.remove('hidden');
+            hideLoading();
+            
+            // 开始轮询任务状态
+            this.pollTaskStatus(data.taskId, onSuccess, onError, onProgress);
+            
+            return data.taskId;
+        } catch (error) {
+            hideLoading();
+            if (onError) {
+                onError(error);
+            } else {
+                showToast(error.message || '创建任务失败');
+            }
+            throw error;
+        }
+    },
+    
+    // 轮询任务状态
+    async pollTaskStatus(taskId, onSuccess, onError, onProgress) {
+        try {
+            // 轮询间隔从2秒开始，逐渐增加到10秒
+            let interval = 2000;
+            const maxInterval = 10000;
+            
+            // 最多轮询5分钟
+            const maxPollingTime = 5 * 60 * 1000;
+            const startTime = Date.now();
+            
+            while (Date.now() - startTime < maxPollingTime && this.activeTasks[taskId]) {
+                // 检查任务状态
+                const result = await API.getTaskStatus(taskId);
+                
+                if (!result.success) {
+                    throw new Error(result.data?.message || '获取任务状态失败');
+                }
+                
+                const data = result.data;
+                
+                // 更新进度UI
+                const progress = data.progress || 0;
+                updateProgressUI(progress, data.statusMessage || '正在处理...');
+                
+                // 调用进度回调
+                if (onProgress) {
+                    onProgress(data);
+                }
+                
+                // 检查任务是否完成
+                if (data.status === 'completed') {
+                    // 隐藏进度条
+                    this.progressContainer.classList.add('hidden');
+                    
+                    // 调用成功回调
+                    if (onSuccess) {
+                        onSuccess(data.result);
+                    }
+                    
+                    // 清理任务
+                    delete this.activeTasks[taskId];
+                    if (this.taskStatusCallbacks[taskId]) {
+                        delete this.taskStatusCallbacks[taskId];
+                    }
+                    
+                    return;
+                }
+                
+                // 检查任务是否失败
+                if (data.status === 'failed') {
+                    // 隐藏进度条
+                    this.progressContainer.classList.add('hidden');
+                    
+                    // 调用失败回调
+                    if (onError) {
+                        onError(new Error(data.errorMessage || '任务执行失败'));
+                    } else {
+                        showToast(data.errorMessage || '任务执行失败');
+                    }
+                    
+                    // 清理任务
+                    delete this.activeTasks[taskId];
+                    if (this.taskStatusCallbacks[taskId]) {
+                        delete this.taskStatusCallbacks[taskId];
+                    }
+                    
+                    return;
+                }
+                
+                // 增加轮询间隔
+                interval = Math.min(interval + 500, maxInterval);
+                
+                // 等待下一次轮询
+                await new Promise(resolve => setTimeout(resolve, interval));
+            }
+            
+            // 轮询超时
+            if (this.activeTasks[taskId]) {
+                // 隐藏进度条
+                this.progressContainer.classList.add('hidden');
+                
+                const error = new Error('任务处理超时，请重试');
+                if (onError) {
+                    onError(error);
+                } else {
+                    showToast('任务处理超时，请重试');
+                }
+                
+                // 清理任务
+                delete this.activeTasks[taskId];
+                if (this.taskStatusCallbacks[taskId]) {
+                    delete this.taskStatusCallbacks[taskId];
+                }
+            }
+        } catch (error) {
+            // 隐藏进度条
+            this.progressContainer.classList.add('hidden');
+            
+            if (onError) {
+                onError(error);
+            } else {
+                showToast(error.message || '任务状态查询失败');
+            }
+            
+            // 清理任务
+            if (this.activeTasks[taskId]) {
+                delete this.activeTasks[taskId];
+            }
+            if (this.taskStatusCallbacks[taskId]) {
+                delete this.taskStatusCallbacks[taskId];
+            }
+        }
+    },
+    
+    // 取消任务
+    async cancelTask(taskId) {
+        try {
+            const result = await API.cancelTask(taskId);
+            
+            if (!result.success) {
+                throw new Error(result.data?.message || '取消任务失败');
+            }
+            
+            // 隐藏进度条
+            this.progressContainer.classList.add('hidden');
+            
+            // 清理任务
+            delete this.activeTasks[taskId];
+            if (this.taskStatusCallbacks[taskId]) {
+                delete this.taskStatusCallbacks[taskId];
+            }
+            
+            showToast('任务已取消');
+        } catch (error) {
+            showToast(error.message || '取消任务失败');
+        }
+    },
+    
+    // 检查是否有活跃任务
+    hasActiveTask() {
+        return Object.keys(this.activeTasks).length > 0;
+    },
+    
+    // 获取所有活跃任务
+    getActiveTasks() {
+        return this.activeTasks;
+    }
+};
+
+// 初始化应用
+export async function initApp() {
+    // 初始化DOM元素
+    domElements.init();
+    
+    // 检查用户登录状态
+    await checkUserLogin();
+    
+    // 初始化自动保存功能（从utils.js中获取）
+    if (window.initAutoSave) {
+        window.initAutoSave();
+        // 将appState暴露到window对象，以便utils.js中的函数可以访问它
+        window.appState = appState;
+    }
+    
+    // 绑定事件监听
+    bindEventListeners();
+    
+    // 初始渲染
+    renderCurrentStep(appState, workflowActions);
+    updateStepNavigation(appState);
+    updateStepButtons(appState);
+}
+
+// 检查用户登录状态
+export async function checkUserLogin() {
+    try {
+        const result = await API.checkUserLoginStatus();
+        
+        if (result.success) {
+            appState.currentUser = result.user;
+            updateUserDisplay(result.user);
+        } else {
+            // 用户未登录，显示为演示模式
+            console.log('用户未登录，进入演示模式');
+            appState.currentUser = { username: '演示用户' };
+            updateUserDisplay(appState.currentUser);
+            
+            if (result.demo) {
+                showToast('当前为离线演示模式，部分功能可能受限');
+            }
+        }
+    } catch (error) {
+        console.error('检查用户登录状态失败:', error);
+        // API调用失败，进入演示模式
+        appState.currentUser = { username: '演示用户' };
+        updateUserDisplay(appState.currentUser);
+        showToast('当前为离线演示模式，部分功能可能受限');
+    }
+}
+
+// 绑定事件监听
+export function bindEventListeners() {
+    // 导航步骤点击事件
+    for (let i = 0; i <= 5; i++) {
+        const stepNavBtn = domElements.stepsNav[i];
+        if (stepNavBtn) {
+            stepNavBtn.addEventListener('click', () => {
+                goToStep(i, appState, renderCurrentStep, updateStepNavigation, updateStepButtons);
+            });
+        }
+    }
+    
+    // 前后步骤按钮点击事件
+    domElements.prevStepBtn.addEventListener('click', () => {
+        goToPrevStep(appState, renderCurrentStep, updateStepNavigation, updateStepButtons);
+    });
+    
+    domElements.nextStepBtn.addEventListener('click', () => {
+        goToNextStep(appState, renderCurrentStep, updateStepNavigation, updateStepButtons);
+    });
+    
+    // 用户菜单事件
+    domElements.userMenuBtn.addEventListener('click', toggleUserMenu);
+    domElements.logoutBtn.addEventListener('click', handleLogout);
+    
+    // 保存和导出按钮事件
+    domElements.saveScriptBtn.addEventListener('click', () => {
+        workflowActions.saveScript(appState, autoSave);
+    });
+    
+    domElements.exportScriptBtn.addEventListener('click', () => {
+        workflowActions.exportScript(appState);
+    });
+    
+    // 返回和预览按钮事件
+    domElements.backBtn.addEventListener('click', workflowActions.goBack);
+    domElements.previewBtn.addEventListener('click', () => {
+        workflowActions.previewScript(appState);
+    });
+    
+    // 剧本标题更改事件
+    domElements.scriptTitle.addEventListener('input', (event) => {
+        updateScriptTitle(event, appState, autoSave);
+    });
+    
+    // 点击页面其他地方关闭下拉菜单
+    document.addEventListener('click', (event) => {
+        if (!domElements.userMenuBtn.contains(event.target) && !domElements.userMenu.contains(event.target)) {
+            domElements.userMenu.classList.add('hidden');
+        }
+    });
+    
+    // 其他事件监听可以在这里添加
+}
+
+// 处理用户登出
+export async function handleLogout() {
+    try {
+        const success = await API.logoutUser();
+        if (success) {
+            appState.currentUser = null;
+            window.location.href = '/index.html';
+        } else {
+            showToast('退出登录失败，请重试', 3000, 'error');
+        }
+    } catch (error) {
+        console.error('退出登录失败:', error);
+        showToast('退出登录失败，请重试', 3000, 'error');
+    }
+}
+
+// 渲染当前步骤
+export function renderCurrentStep(appState, workflowActions) {
+    domElements.scriptCreatorContent.innerHTML = '';
+    
+    switch (appState.currentStep) {
+        case 0:
+            renderScriptTypeSelection(appState, workflowActions);
+            break;
+        case 1:
+            renderGenerateLoglinesStep(appState);
+            break;
+        case 2:
+            renderLoglinesStep(appState);
+            break;
+        case 3:
+            renderOutlineStep(appState);
+            break;
+        case 4:
+            renderEpisodesStep(appState);
+            break;
+        case 5:
+            renderScriptStep(appState);
+            break;
+    }
+}
+
+// 渲染剧本类型选择步骤
+function renderScriptTypeSelection(appState, workflowActions) {
+    const step0Content = document.createElement('div');
+    step0Content.id = 'step-0';
+    step0Content.className = 'animate-slide-up';
+    
+    step0Content.innerHTML = `
+        <h2 class="text-2xl font-bold mb-6">选择剧本类型</h2>
+        <p class="text-gray-600 mb-8">请选择您想要创作的剧本类型，并设置相关参数</p>
+        
+        <div class="space-y-8">
+            <!-- 剧本类型选择 -->
+            <div>
+                <label class="block text-gray-700 font-medium mb-3">剧本类型</label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="border border-primary bg-primary-5 rounded-lg p-4 cursor-pointer hover:border-primary-50 transition-colors script-type-option card-hover" data-type="竖屏短剧">
+                        <div class="flex items-center mb-2">
+                            <div class="w-8 h-8 rounded-full bg-primary-10 flex items-center justify-center mr-3">
+                                <i class="fa fa-mobile text-primary"></i>
+                            </div>
+                            <h3 class="text-lg font-bold">竖屏短剧</h3>
+                        </div>
+                        <p class="text-gray-600">适用于手机端观看，每集时长1-3分钟，适合短视频平台</p>
+                    </div>
+                    
+                    <div class="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-primary-50 transition-colors script-type-option card-hover" data-type="横屏短剧">
+                        <div class="flex items-center mb-2">
+                            <div class="w-8 h-8 rounded-full bg-primary-10 flex items-center justify-center mr-3">
+                                <i class="fa fa-tablet text-primary"></i>
+                            </div>
+                            <h3 class="text-lg font-bold">横屏短剧</h3>
+                        </div>
+                        <p class="text-gray-600">适用于平板或电脑观看，每集时长5-10分钟</p>
+                    </div>
+                    
+                    <div class="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-colors script-type-option opacity-50" data-type="电视剧">
+                        <div class="flex items-center mb-2">
+                            <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
+                                <i class="fa fa-television text-gray-500"></i>
+                            </div>
+                            <h3 class="text-lg font-bold">电视剧</h3>
+                        </div>
+                        <p class="text-gray-600">适用于电视播放，每集时长30-60分钟（开发中）</p>
+                    </div>
+                    
+                    <div class="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-colors script-type-option opacity-50" data-type="电影">
+                        <div class="flex items-center mb-2">
+                            <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
+                                <i class="fa fa-film text-gray-500"></i>
+                            </div>
+                            <h3 class="text-lg font-bold">电影</h3>
+                        </div>
+                        <p class="text-gray-600">适用于影院放映，时长90-120分钟（开发中）</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 剧集设置 -->
+            <div id="script-settings">
+                <label class="block text-gray-700 font-medium mb-3">剧集设置</label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-gray-500 mb-2">集数</label>
+                        <input type="number" id="episode-count" min="1" max="100" value="${appState.episodeCount}" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-300">
+                        <p class="text-sm text-gray-500 mt-1">建议短剧集数：10-30集</p>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-gray-500 mb-2">每集字数（约）</label>
+                        <input type="number" id="word-count" min="500" max="50000" value="${appState.wordCount}" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-300">
+                        <p class="text-sm text-gray-500 mt-1">建议短剧字数：3000-8000字/集</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 创作类型选择 -->
+            <div id="creation-type-section">
+                <label class="block text-gray-700 font-medium mb-3">创作方式</label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button id="start-original-btn" class="border border-primary bg-primary-5 text-primary rounded-lg p-4 hover:bg-primary-10 transition-colors card-hover">
+                        <div class="flex items-center mb-2">
+                            <div class="w-8 h-8 rounded-full bg-primary-20 flex items-center justify-center mr-3">
+                                <i class="fa fa-lightbulb-o text-primary"></i>
+                            </div>
+                            <h3 class="text-lg font-bold">原创剧本</h3>
+                        </div>
+                        <p class="text-gray-600">从灵感出发，创作全新的剧本内容</p>
+                    </button>
+                    
+                    <button id="start-adapt-btn" class="border border-gray-200 rounded-lg p-4 hover:border-primary-50 transition-colors card-hover">
+                        <div class="flex items-center mb-2">
+                            <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center mr-3">
+                                <i class="fa fa-book text-gray-500"></i>
+                            </div>
+                            <h3 class="text-lg font-bold">改编剧本</h3>
+                        </div>
+                        <p class="text-gray-600">上传原著文本，改编成剧本格式</p>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    domElements.scriptCreatorContent.appendChild(step0Content);
+    
+    // 绑定事件
+    const scriptTypeOptions = document.querySelectorAll('.script-type-option');
+    scriptTypeOptions.forEach(option => {
+        // 跳过开发中的功能
+        if (option.classList.contains('opacity-50')) return;
+        
+        option.addEventListener('click', () => {
+            workflowActions.handleScriptTypeSelection(option, appState);
+        });
+    });
+    
+    // 创作方式选择事件
+    document.getElementById('start-original-btn').addEventListener('click', () => {
+        workflowActions.proceedToOriginalScript(appState, goToNextStep, renderCurrentStep, updateStepNavigation, updateStepButtons);
+    });
+    
+    document.getElementById('start-adapt-btn').addEventListener('click', () => {
+        workflowActions.proceedToAdaptScript(appState);
+    });
+    
+    // 为剧集设置和每集字数输入框添加变化事件
+    const episodeCountInput = document.getElementById('episode-count');
+    const wordCountInput = document.getElementById('word-count');
+    
+    if (episodeCountInput) {
+        episodeCountInput.addEventListener('change', (e) => {
+            workflowActions.handleEpisodeCountChange(e, appState, autoSave);
+        });
+    }
+    
+    if (wordCountInput) {
+        wordCountInput.addEventListener('change', (e) => {
+            workflowActions.handleWordCountChange(e, appState, autoSave);
+        });
+    }
+}
+
+// 其他渲染函数可以根据需要添加
+function renderGenerateLoglinesStep(appState) {
+    const step1Content = document.createElement('div');
+    step1Content.id = 'step-1';
+    step1Content.className = 'animate-slide-up';
+    
+    step1Content.innerHTML = `
+        <h2 class="text-2xl font-bold mb-6">生成故事创意</h2>
+        <p class="text-gray-600 mb-8">请填写一些关键词，帮助AI生成故事创意</p>
+        
+        <!-- 故事创意生成表单 -->
+        <div class="space-y-6">
+            <div>
+                <label class="block text-gray-700 font-medium mb-3">故事关键词</label>
+                <input type="text" id="story-keywords" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-300" placeholder="例如：都市、职场、爱情、成长">
+                <p class="text-sm text-gray-500 mt-1">输入多个关键词，用逗号分隔</p>
+            </div>
+            
+            <div>
+                <label class="block text-gray-700 font-medium mb-3">故事风格</label>
+                <select id="story-style" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-300">
+                    <option value="浪漫爱情">浪漫爱情</option>
+                    <option value="悬疑推理">悬疑推理</option>
+                    <option value="都市职场">都市职场</option>
+                    <option value="古装武侠">古装武侠</option>
+                    <option value="科幻未来">科幻未来</option>
+                    <option value="青春校园">青春校园</option>
+                </select>
+            </div>
+            
+            <div>
+                <label class="block text-gray-700 font-medium mb-3">特殊要求（可选）</label>
+                <textarea id="special-requirements" rows="3" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-300" placeholder="如有特殊要求，请在此说明"></textarea>
+            </div>
+            
+            <div class="pt-4">
+                <button id="generate-loglines-btn" class="btn-primary w-full">
+                    <i class="fa fa-magic mr-2"></i>生成故事创意
+                </button>
+            </div>
+        </div>
+        
+        <!-- 故事创意结果区域（初始隐藏） -->
+        <div id="loglines-result" class="mt-8 hidden">
+            <h3 class="text-xl font-bold mb-4">生成的故事创意</h3>
+            <div id="loglines-list" class="space-y-4">
+                <!-- 故事创意列表将在这里动态生成 -->
+            </div>
+        </div>
+    `;
+    
+    domElements.scriptCreatorContent.appendChild(step1Content);
+    
+    // 绑定生成故事创意按钮事件
+    document.getElementById('generate-loglines-btn').addEventListener('click', async () => {
+        try {
+            const keywords = document.getElementById('story-keywords').value;
+            const style = document.getElementById('story-style').value;
+            const requirements = document.getElementById('special-requirements').value;
+            
+            if (!keywords.trim()) {
+                showToast('请至少输入一个关键词', 3000, 'error');
+                return;
+            }
+            
+            showLoading('正在生成故事创意...');
+            
+            // 模拟生成故事创意
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // 生成一些示例故事创意
+            appState.scriptData.loglines = [
+                {
+                    id: 1,
+                    content: `这是一个关于${keywords}的故事，讲述了一位年轻人在都市中奋斗的历程，充满了${style}元素。`,
+                    selected: false
+                },
+                {
+                    id: 2,
+                    content: `在一个充满${keywords}的世界里，主角面临着前所未有的挑战，通过努力最终实现了自我成长。`,
+                    selected: false
+                },
+                {
+                    id: 3,
+                    content: `一个关于${style}的故事，围绕着${keywords}展开，情节跌宕起伏，扣人心弦。`,
+                    selected: false
+                }
+            ];
+            
+            // 显示生成的故事创意
+            const loglinesResult = document.getElementById('loglines-result');
+            const loglinesList = document.getElementById('loglines-list');
+            
+            loglinesList.innerHTML = '';
+            appState.scriptData.loglines.forEach(logline => {
+                const loglineItem = document.createElement('div');
+                loglineItem.className = 'border border-gray-200 rounded-lg p-4 hover:border-primary transition-colors cursor-pointer';
+                loglineItem.dataset.id = logline.id;
+                loglineItem.innerHTML = `
+                    <p class="text-gray-800">${logline.content}</p>
+                    <div class="mt-3 flex justify-end">
+                        <button class="select-logline-btn btn-outline text-sm">选择此创意</button>
+                    </div>
+                `;
+                
+                loglinesList.appendChild(loglineItem);
+                
+                // 绑定选择按钮事件
+                loglineItem.querySelector('.select-logline-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectLogline(logline.id);
+                });
+                
+                // 绑定整个项目点击事件
+                loglineItem.addEventListener('click', () => {
+                    selectLogline(logline.id);
+                });
+            });
+            
+            loglinesResult.classList.remove('hidden');
+            hideLoading();
+            
+            // 触发自动保存
+            autoSave.scheduleSave();
+        } catch (error) {
+            console.error('生成故事创意失败:', error);
+            showToast('生成故事创意失败，请重试', 3000, 'error');
+            hideLoading();
+        }
+    });
+    
+    // 选择故事创意函数
+    function selectLogline(loglineId) {
+        // 取消所有选择
+        appState.scriptData.loglines.forEach(logline => {
+            logline.selected = false;
+        });
+        
+        // 选择当前故事创意
+        const selectedLogline = appState.scriptData.loglines.find(logline => logline.id === loglineId);
+        if (selectedLogline) {
+            selectedLogline.selected = true;
+            appState.scriptData.selectedLogline = selectedLogline;
+        }
+        
+        // 更新UI
+        const loglineItems = document.querySelectorAll('#loglines-list > div');
+        loglineItems.forEach(item => {
+            const id = parseInt(item.dataset.id);
+            if (id === loglineId) {
+                item.classList.add('border-primary', 'bg-primary-5');
+            } else {
+                item.classList.remove('border-primary', 'bg-primary-5');
+            }
+        });
+        
+        // 触发自动保存
+        autoSave.scheduleSave();
+        
+        showToast('已选择故事创意', 2000, 'success');
+    }
+}
+
+// 其他渲染函数（renderLoglinesStep, renderOutlineStep等）可以根据需要添加
+function renderLoglinesStep(appState) {
+    const step2Content = document.createElement('div');
+    step2Content.id = 'step-2';
+    step2Content.className = 'animate-slide-up';
+    
+    step2Content.innerHTML = `
+        <h2 class="text-2xl font-bold mb-6">完善故事梗概</h2>
+        <p class="text-gray-600 mb-8">基于您选择的故事创意，进一步完善故事梗概</p>
+        
+        <!-- 当前选择的故事创意 -->
+        <div class="bg-primary-5 border border-primary-20 rounded-lg p-4 mb-6">
+            <h3 class="text-lg font-bold mb-2">当前选择的故事创意</h3>
+            <p class="text-gray-800">${appState.scriptData.selectedLogline?.content || '请返回上一步选择故事创意'}</p>
+        </div>
+        
+        <!-- 故事梗概编辑 -->
+        <div class="space-y-6">
+            <div>
+                <label class="block text-gray-700 font-medium mb-3">故事梗概</label>
+                <textarea id="outline-editor" rows="10" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-300" placeholder="请输入或完善故事梗概...">${appState.scriptData.outline}</textarea>
+                <p class="text-sm text-gray-500 mt-1">故事梗概应包括主要人物、情节发展和故事结局</p>
+            </div>
+            
+            <div class="flex space-x-4">
+                <button id="generate-outline-btn" class="btn-outline flex-1">
+                    <i class="fa fa-magic mr-2"></i>让AI完善梗概
+                </button>
+                <button id="save-outline-btn" class="btn-primary flex-1">
+                    <i class="fa fa-save mr-2"></i>保存梗概
+                </button>
+            </div>
+        </div>
+    `;
+    
+    domElements.scriptCreatorContent.appendChild(step2Content);
+    
+    // 绑定保存梗概按钮事件
+    document.getElementById('save-outline-btn').addEventListener('click', () => {
+        const outlineEditor = document.getElementById('outline-editor');
+        if (outlineEditor) {
+            appState.scriptData.outline = outlineEditor.value;
+            
+            // 触发自动保存
+            autoSave.scheduleSave();
+            
+            showToast('故事梗概已保存', 2000, 'success');
+        }
+    });
+    
+    // 绑定AI完善梗概按钮事件
+    document.getElementById('generate-outline-btn').addEventListener('click', async () => {
+        try {
+            const currentOutline = document.getElementById('outline-editor').value;
+            
+            showLoading('正在让AI完善梗概...');
+            
+            // 模拟AI完善梗概
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // 生成示例梗概内容
+            const aiOutline = `${currentOutline}\n\nAI建议补充：\n1. 增加主角的背景故事和动机\n2. 丰富配角的性格特点\n3. 设计更多的冲突和转折点\n4. 完善故事的情感线和主题表达`;
+            
+            document.getElementById('outline-editor').value = aiOutline;
+            appState.scriptData.outline = aiOutline;
+            
+            hideLoading();
+            showToast('AI已完善故事梗概', 2000, 'success');
+            
+            // 触发自动保存
+            autoSave.scheduleSave();
+        } catch (error) {
+            console.error('AI完善梗概失败:', error);
+            showToast('AI完善梗概失败，请重试', 3000, 'error');
+            hideLoading();
+        }
+    });
+}
+
+// 为了简化，这里只实现了前三个步骤的渲染函数
+// 实际项目中，还需要实现renderOutlineStep, renderEpisodesStep和renderScriptStep等函数
+
+// 初始化应用
+document.addEventListener('DOMContentLoaded', initApp);

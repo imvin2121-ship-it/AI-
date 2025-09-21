@@ -464,35 +464,40 @@ function proceedToAdaptScript() {
     
     appState.keywords = keywords;
     
-    showLoading('正在生成故事创意...');
+    // 检查是否有活跃任务
+    if (taskManager.hasActiveTask()) {
+      alert('有任务正在处理中，请等待完成后再进行操作');
+      return;
+    }
     
     try {
-      const response = await fetch('/api/scripts/generate-loglines', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
+      // 使用任务管理器创建异步任务
+      await taskManager.createTask(
+        '/api/scripts/generate-loglines',
+        {
           keywords,
           scriptType: appState.scriptType, // 添加剧本类型参数
           episodeCount: appState.episodeCount // 添加集数参数
-        })
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        appState.scriptData.loglines = data.loglines;
-        renderLoglines(data.loglines);
-        goToStep(2);
-      } else {
-        alert(data.message || '生成故事创意失败');
-      }
+        },
+        // 成功回调
+        (result) => {
+          appState.scriptData.loglines = result.loglines;
+          renderLoglines(result.loglines);
+          goToStep(2);
+        },
+        // 失败回调
+        (error) => {
+          console.error('生成故事创意错误:', error);
+          alert('生成故事创意失败，请稍后重试');
+        },
+        // 进度回调
+        (status) => {
+          // 可以在这里添加自定义的进度处理逻辑
+          console.log('任务进度:', status);
+        }
+      );
     } catch (error) {
-      console.error('生成故事创意错误:', error);
-      alert('生成故事创意失败，请稍后重试');
-    } finally {
-      hideLoading();
+      console.error('创建任务失败:', error);
     }
   }
 
@@ -544,31 +549,38 @@ async function generateOutline() {
     return;
   }
   
-  showLoading('正在生成故事梗概...');
+  // 检查是否有活跃任务
+  if (taskManager.hasActiveTask()) {
+    alert('有任务正在处理中，请等待完成后再进行操作');
+    return;
+  }
   
   try {
-    const response = await fetch('/api/scripts/generate-outline', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+    // 使用任务管理器创建异步任务
+    await taskManager.createTask(
+      '/api/scripts/generate-outline',
+      {
+        logline: appState.selectedLogline
       },
-      body: JSON.stringify({ logline: appState.selectedLogline })
-    });
-    
-    const data = await response.json();
-    
-    if (response.ok) {
-      appState.scriptData.outline = data.outline;
-      renderOutlineStep();
-      goToStep(3);
-    } else {
-      alert(data.message || '生成故事梗概失败');
-    }
+      // 成功回调
+      (result) => {
+        appState.scriptData.outline = result.outline;
+        renderOutlineStep();
+        goToStep(3);
+      },
+      // 失败回调
+      (error) => {
+        console.error('生成故事梗概错误:', error);
+        alert('生成故事梗概失败，请稍后重试');
+      },
+      // 进度回调
+      (status) => {
+        // 可以在这里添加自定义的进度处理逻辑
+        console.log('任务进度:', status);
+      }
+    );
   } catch (error) {
-    console.error('生成故事梗概错误:', error);
-    alert('生成故事梗概失败，请稍后重试');
-  } finally {
-    hideLoading();
+    console.error('创建任务失败:', error);
   }
 }
 
@@ -623,35 +635,40 @@ function renderOutlineStep() {
     
     appState.scriptData.outline = outline;
     
-    showLoading('正在生成分集大纲...');
+    // 检查是否有活跃任务
+    if (taskManager.hasActiveTask()) {
+      alert('有任务正在处理中，请等待完成后再进行操作');
+      return;
+    }
     
     try {
-      const response = await fetch('/api/scripts/generate-episodes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
+      // 使用任务管理器创建异步任务
+      await taskManager.createTask(
+        '/api/scripts/generate-episodes',
+        {
           outline,
           episodeCount: appState.episodeCount, // 使用用户选择的集数
           scriptType: appState.scriptType // 添加剧本类型参数
-        })
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        appState.scriptData.episodes = data.episodes;
-        renderEpisodesStep();
-        goToStep(4);
-      } else {
-        alert(data.message || '生成分集大纲失败');
-      }
+        },
+        // 成功回调
+        (result) => {
+          appState.scriptData.episodes = result.episodes;
+          renderEpisodesStep();
+          goToStep(4);
+        },
+        // 失败回调
+        (error) => {
+          console.error('生成分集大纲错误:', error);
+          alert('生成分集大纲失败，请稍后重试');
+        },
+        // 进度回调
+        (status) => {
+          // 可以在这里添加自定义的进度处理逻辑
+          console.log('任务进度:', status);
+        }
+      );
     } catch (error) {
-      console.error('生成分集大纲错误:', error);
-      alert('生成分集大纲失败，请稍后重试');
-    } finally {
-      hideLoading();
+      console.error('创建任务失败:', error);
     }
   }
 
@@ -713,36 +730,41 @@ function renderEpisodesStep() {
       return;
     }
     
-    showLoading('正在生成剧本内容...');
+    // 检查是否有活跃任务
+    if (taskManager.hasActiveTask()) {
+      alert('有任务正在处理中，请等待完成后再进行操作');
+      return;
+    }
     
     try {
-      const response = await fetch('/api/scripts/generate-script', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+      // 使用任务管理器创建异步任务
+      await taskManager.createTask(
+        '/api/scripts/generate-script',
+        {
           outline: appState.scriptData.outline,
           episodes: appState.scriptData.episodes,
           scriptType: appState.scriptType, // 添加剧本类型参数
           wordCount: appState.wordCount // 添加每集字数参数
-        })
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        appState.scriptData.scriptContent = data.script;
-        renderScriptStep();
-        goToStep(5);
-      } else {
-        alert(data.message || '生成剧本内容失败');
-      }
+        },
+        // 成功回调
+        (result) => {
+          appState.scriptData.scriptContent = result.script;
+          renderScriptStep();
+          goToStep(5);
+        },
+        // 失败回调
+        (error) => {
+          console.error('生成剧本内容错误:', error);
+          alert('生成剧本内容失败，请稍后重试');
+        },
+        // 进度回调
+        (status) => {
+          // 可以在这里添加自定义的进度处理逻辑
+          console.log('任务进度:', status);
+        }
+      );
     } catch (error) {
-      console.error('生成剧本内容错误:', error);
-      alert('生成剧本内容失败，请稍后重试');
-    } finally {
-      hideLoading();
+      console.error('创建任务失败:', error);
     }
   }
 
